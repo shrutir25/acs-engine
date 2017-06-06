@@ -25,7 +25,7 @@ function teardown {
 }
 
 log "Downloading dcos"
-${remote_exec} curl -O https://downloads.dcos.io/binaries/cli/linux/x86-64/dcos-1.8/dcos || (log "Failed to download dcos"; exit 1)
+${remote_exec} curl -O https://downloads.dcos.io/binaries/cli/linux/x86-64/dcos-1.9/dcos || (log "Failed to download dcos"; exit 1)
 log "Setting dcos permissions"
 ${remote_exec} chmod a+x ./dcos || (log "Failed to chmod dcos"; exit 1)
 log "Configuring dcos"
