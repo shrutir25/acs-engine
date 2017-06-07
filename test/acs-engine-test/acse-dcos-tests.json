@@ -1,0 +1,28 @@
+{
+  "deployments": [
+    {
+      "cluster_definition": "dcos-versions/dcos1.8.4.json",
+      "location": "canadaeast"
+    },
+    {
+      "cluster_definition": "dcos-versions/dcos1.8.8.json",
+      "location": "centralindia"
+    },
+    {
+      "cluster_definition": "dcos-versions/dcos1.9.0.json",
+      "location": "southindia"
+    },
+    {
+      "cluster_definition": "disks-managed/dcos-preAttachedDisks-vmas.json",
+      "location": "westeurope"
+    },
+    {
+      "cluster_definition": "disks-managed/dcos-vmss.json",
+      "location": "centralus"
+    },
+    {
+      "cluster_definition": "disks-storageaccount/dcos.json",
+      "location": "westus2"
+    }
+  ]
+}
