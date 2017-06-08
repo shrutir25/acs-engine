@@ -69,7 +69,7 @@ while [[ ${count} -lt 25 ]]; do
     log "Found 3 running tasks"
     break
   else
-    ./dcos marathon app list
+    ${remote_exec} ./dcos marathon app list
   fi
   sleep ${count}
 done
