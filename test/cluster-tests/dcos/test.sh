@@ -43,7 +43,7 @@ log "Adding marathon app"
 count=10
 while (( $count > 0 )); do
   log "  ... counting down $count"
-  ./dcos marathon app list | grep /web
+  ${remote_exec} ./dcos marathon app list | grep /web
   retval=$?
   if [[ $retval -eq 0 ]]; then log "Marathon App successfully installed" && break; fi
   ${remote_exec} ./dcos marathon app add marathon.json
