@@ -22,7 +22,7 @@ RUN mkdir /tmp/azurecli \
 
 RUN curl -fsSL https://get.docker.com/ | sh
 
-ENV KUBECTL_VERSION 1.6.6
+ENV KUBECTL_VERSION 1.7.5
 RUN curl "https://storage.googleapis.com/kubernetes-release/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" > /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl
 
@@ -34,10 +34,17 @@ RUN git clone https://github.com/akesterson/cmdarg.git /tmp/cmdarg \
 RUN git clone https://github.com/akesterson/shunit.git /tmp/shunit \
     && cd /tmp/shunit && make install && rm -rf /tmp/shunit
 
+ENV ACSENGINE_EXPERIMENTAL_FEATURES 1
 WORKDIR /gopath/src/github.com/Azure/acs-engine
 
 # Cache vendor layer
-ADD Makefile versioning.mk glide.yaml glide.lock /gopath/src/github.com/Azure/acs-engine/
+ADD Makefile test.mk versioning.mk glide.yaml glide.lock /gopath/src/github.com/Azure/acs-engine/
 RUN make bootstrap
+
+# https://github.com/dotnet/core/blob/master/release-notes/download-archives/2.0.0-preview2-download.md
+RUN echo "deb [arch=amd64] https://apt-mo.trafficmanager.net/repos/dotnet-release/ xenial main" > /etc/apt/sources.list.d/dotnetdev.list \
+    && apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 417A0893 \
+    && apt-get update \
+    && apt-get -y install dotnet-sdk-2.0.0-preview2-006497
 
 ADD . /gopath/src/github.com/Azure/acs-engine

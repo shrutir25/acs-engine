@@ -54,6 +54,6 @@ gometalinter \
   --deadline 60s \
   --exclude pkg/i18n/translations.go \
   --exclude pkg/acsengine/templates.go \
-  ./... || :
+  ./... || exit_code=1
 
 exit $exit_code

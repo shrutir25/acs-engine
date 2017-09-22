@@ -11,7 +11,6 @@ DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 ###############################################################################
 
 set -e
-set -u
 set -o pipefail
 
 ROOT="${DIR}/.."
@@ -24,7 +23,8 @@ ROOT="${DIR}/.."
 [[ ! -z "${CLUSTER_SERVICE_PRINCIPAL_CLIENT_ID:-}" ]]     || (echo "Must specify CLUSTER_SERVICE_PRINCIPAL_CLIENT_ID" && exit -1)
 [[ ! -z "${CLUSTER_SERVICE_PRINCIPAL_CLIENT_SECRET:-}" ]] || (echo "Must specify CLUSTER_SERVICE_PRINCIPAL_CLIENT_SECRET" && exit -1)
 [[ ! -z "${STAGE_TIMEOUT_MIN:-}" ]]                       || (echo "Must specify STAGE_TIMEOUT_MIN" && exit -1)
+[[ ! -z "${TEST_CONFIG:-}" ]]                             || (echo "Must specify TEST_CONFIG" && exit -1)
 
 make bootstrap build
 
-${ROOT}/test/acs-engine-test/acs-engine-test -c ${TEST_CONFIG:-${ROOT}/test/acs-engine-test/acs-engine-test.json} -d ${ROOT}
+${ROOT}/test/acs-engine-test/acs-engine-test -c ${TEST_CONFIG} -d ${ROOT} -e ${LOGERROR_CONFIG:-${ROOT}/test/acs-engine-test/acs-engine-errors.json} -j ${SA_NAME} -k ${SA_KEY}

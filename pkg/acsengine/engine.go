@@ -8,33 +8,38 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io/ioutil"
+	"log"
 	"math/rand"
+	"net/http"
 	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"text/template"
 
+	//log "github.com/sirupsen/logrus"
 	"github.com/Azure/acs-engine/pkg/api"
 	"github.com/Azure/acs-engine/pkg/i18n"
+	"github.com/Masterminds/semver"
 	"github.com/ghodss/yaml"
 )
 
 const (
-	kubernetesMasterCustomDataYaml      = "kubernetesmastercustomdata.yml"
-	kubernetesMasterCustomScript        = "kubernetesmastercustomscript.sh"
-	kubernetesAgentCustomDataYaml       = "kubernetesagentcustomdata.yml"
-	kubeConfigJSON                      = "kubeconfig.json"
-	kubernetesWindowsAgentCustomDataPS1 = "kuberneteswindowssetup.ps1"
+	kubernetesMasterCustomDataYaml           = "kubernetesmastercustomdata.yml"
+	kubernetesMasterCustomScript             = "kubernetesmastercustomscript.sh"
+	kubernetesMasterGenerateProxyCertsScript = "kubernetesmastergenerateproxycertscript.sh"
+	kubernetesAgentCustomDataYaml            = "kubernetesagentcustomdata.yml"
+	kubeConfigJSON                           = "kubeconfig.json"
+	kubernetesWindowsAgentCustomDataPS1      = "kuberneteswindowssetup.ps1"
 )
 
 const (
-	dcosCustomData173 = "dcoscustomdata173.t"
-	dcosCustomData184 = "dcoscustomdata184.t"
-	dcosCustomData187 = "dcoscustomdata187.t"
-	dcosCustomData188 = "dcoscustomdata188.t"
-	dcosCustomData190 = "dcoscustomdata190.t"
-	dcosProvision     = "dcosprovision.sh"
+	dcosCustomData188    = "dcoscustomdata188.t"
+	dcosCustomData190    = "dcoscustomdata190.t"
+	dcosCustomData110    = "dcoscustomdata110.t"
+	dcosProvision        = "dcosprovision.sh"
+	dcosWindowsProvision = "dcosWindowsProvision.ps1"
 )
 
 const (
@@ -46,36 +51,40 @@ const (
 )
 
 const (
-	agentOutputs                 = "agentoutputs.t"
-	agentParams                  = "agentparams.t"
-	classicParams                = "classicparams.t"
-	dcosAgentResourcesVMAS       = "dcosagentresourcesvmas.t"
-	dcosAgentResourcesVMSS       = "dcosagentresourcesvmss.t"
-	dcosAgentVars                = "dcosagentvars.t"
-	dcosBaseFile                 = "dcosbase.t"
-	dcosParams                   = "dcosparams.t"
-	dcosMasterResources          = "dcosmasterresources.t"
-	dcosMasterVars               = "dcosmastervars.t"
-	kubernetesBaseFile           = "kubernetesbase.t"
-	kubernetesAgentResourcesVMAS = "kubernetesagentresourcesvmas.t"
-	kubernetesAgentVars          = "kubernetesagentvars.t"
-	kubernetesMasterResources    = "kubernetesmasterresources.t"
-	kubernetesMasterVars         = "kubernetesmastervars.t"
-	kubernetesParams             = "kubernetesparams.t"
-	kubernetesWinAgentVars       = "kuberneteswinagentresourcesvmas.t"
-	kubernetesKubeletService     = "kuberneteskubelet.service"
-	masterOutputs                = "masteroutputs.t"
-	masterParams                 = "masterparams.t"
-	swarmBaseFile                = "swarmbase.t"
-	swarmAgentResourcesVMAS      = "swarmagentresourcesvmas.t"
-	swarmAgentResourcesVMSS      = "swarmagentresourcesvmss.t"
-	swarmAgentResourcesClassic   = "swarmagentresourcesclassic.t"
-	swarmAgentVars               = "swarmagentvars.t"
-	swarmMasterResources         = "swarmmasterresources.t"
-	swarmMasterVars              = "swarmmastervars.t"
-	swarmWinAgentResourcesVMAS   = "swarmwinagentresourcesvmas.t"
-	swarmWinAgentResourcesVMSS   = "swarmwinagentresourcesvmss.t"
-	windowsParams                = "windowsparams.t"
+	agentOutputs                  = "agentoutputs.t"
+	agentParams                   = "agentparams.t"
+	classicParams                 = "classicparams.t"
+	dcosAgentResourcesVMAS        = "dcosagentresourcesvmas.t"
+	dcosWindowsAgentResourcesVMAS = "dcosWindowsAgentResourcesVmas.t"
+	dcosAgentResourcesVMSS        = "dcosagentresourcesvmss.t"
+	dcosWindowsAgentResourcesVMSS = "dcosWindowsAgentResourcesVmss.t"
+	dcosAgentVars                 = "dcosagentvars.t"
+	dcosBaseFile                  = "dcosbase.t"
+	dcosParams                    = "dcosparams.t"
+	dcosMasterResources           = "dcosmasterresources.t"
+	dcosMasterVars                = "dcosmastervars.t"
+	iaasOutputs                   = "iaasoutputs.t"
+	kubernetesBaseFile            = "kubernetesbase.t"
+	kubernetesAgentResourcesVMAS  = "kubernetesagentresourcesvmas.t"
+	kubernetesAgentVars           = "kubernetesagentvars.t"
+	kubernetesMasterResources     = "kubernetesmasterresources.t"
+	kubernetesMasterVars          = "kubernetesmastervars.t"
+	kubernetesParams              = "kubernetesparams.t"
+	kubernetesWinAgentVars        = "kuberneteswinagentresourcesvmas.t"
+	kubernetesKubeletService      = "kuberneteskubelet.service"
+	masterOutputs                 = "masteroutputs.t"
+	masterParams                  = "masterparams.t"
+	swarmBaseFile                 = "swarmbase.t"
+	swarmParams                   = "swarmparams.t"
+	swarmAgentResourcesVMAS       = "swarmagentresourcesvmas.t"
+	swarmAgentResourcesVMSS       = "swarmagentresourcesvmss.t"
+	swarmAgentResourcesClassic    = "swarmagentresourcesclassic.t"
+	swarmAgentVars                = "swarmagentvars.t"
+	swarmMasterResources          = "swarmmasterresources.t"
+	swarmMasterVars               = "swarmmastervars.t"
+	swarmWinAgentResourcesVMAS    = "swarmwinagentresourcesvmas.t"
+	swarmWinAgentResourcesVMSS    = "swarmwinagentresourcesvmss.t"
+	windowsParams                 = "windowsparams.t"
 )
 
 const (
@@ -93,8 +102,15 @@ var kubernetesManifestYamls = map[string]string{
 }
 
 var kubernetesAritfacts = map[string]string{
-	"MASTER_PROVISION_B64_GZIP_STR": kubernetesMasterCustomScript,
-	"KUBELET_SERVICE_B64_GZIP_STR":  kubernetesKubeletService,
+	"MASTER_PROVISION_B64_GZIP_STR":            kubernetesMasterCustomScript,
+	"MASTER_GENERATE_PROXY_CERTS_B64_GZIP_STR": kubernetesMasterGenerateProxyCertsScript,
+	"KUBELET_SERVICE_B64_GZIP_STR":             kubernetesKubeletService,
+}
+
+var kubernetesAritfacts15 = map[string]string{
+	"MASTER_PROVISION_B64_GZIP_STR":            kubernetesMasterCustomScript,
+	"MASTER_GENERATE_PROXY_CERTS_B64_GZIP_STR": kubernetesMasterGenerateProxyCertsScript,
+	"KUBELET_SERVICE_B64_GZIP_STR":             "kuberneteskubelet1.5.service",
 }
 
 var kubernetesAddonYamls = map[string]string{
@@ -109,7 +125,7 @@ var kubernetesAddonYamls = map[string]string{
 var kubernetesAddonYamls15 = map[string]string{
 	"MASTER_ADDON_HEAPSTER_DEPLOYMENT_B64_GZIP_STR":             "kubernetesmasteraddons-heapster-deployment1.5.yaml",
 	"MASTER_ADDON_KUBE_DNS_DEPLOYMENT_B64_GZIP_STR":             "kubernetesmasteraddons-kube-dns-deployment1.5.yaml",
-	"MASTER_ADDON_KUBE_PROXY_DAEMONSET_B64_GZIP_STR":            "kubernetesmasteraddons-kube-proxy-daemonset.yaml",
+	"MASTER_ADDON_KUBE_PROXY_DAEMONSET_B64_GZIP_STR":            "kubernetesmasteraddons-kube-proxy-daemonset1.5.yaml",
 	"MASTER_ADDON_KUBERNETES_DASHBOARD_DEPLOYMENT_B64_GZIP_STR": "kubernetesmasteraddons-kubernetes-dashboard-deployment1.5.yaml",
 	"MASTER_ADDON_AZURE_STORAGE_CLASSES_B64_GZIP_STR":           "kubernetesmasteraddons-azure-storage-classes.yaml",
 	"MASTER_ADDON_TILLER_DEPLOYMENT_B64_GZIP_STR":               "kubernetesmasteraddons-tiller-deployment1.5.yaml",
@@ -123,11 +139,11 @@ var calicoAddonYamls15 = map[string]string{
 	"MASTER_ADDON_CALICO_DAEMONSET_B64_GZIP_STR": "kubernetesmasteraddons-calico-daemonset1.5.yaml",
 }
 
-var commonTemplateFiles = []string{agentOutputs, agentParams, classicParams, masterOutputs, masterParams, windowsParams}
-var dcosTemplateFiles = []string{dcosAgentResourcesVMAS, dcosAgentResourcesVMSS, dcosAgentVars, dcosBaseFile, dcosMasterResources, dcosMasterVars, dcosParams}
+var commonTemplateFiles = []string{agentOutputs, agentParams, classicParams, masterOutputs, iaasOutputs, masterParams, windowsParams}
+var dcosTemplateFiles = []string{dcosBaseFile, dcosAgentResourcesVMAS, dcosAgentResourcesVMSS, dcosAgentVars, dcosMasterResources, dcosMasterVars, dcosParams, dcosWindowsAgentResourcesVMAS, dcosWindowsAgentResourcesVMSS}
 var kubernetesTemplateFiles = []string{kubernetesBaseFile, kubernetesAgentResourcesVMAS, kubernetesAgentVars, kubernetesMasterResources, kubernetesMasterVars, kubernetesParams, kubernetesWinAgentVars}
-var swarmTemplateFiles = []string{swarmBaseFile, swarmAgentResourcesVMAS, swarmAgentVars, swarmAgentResourcesVMSS, swarmAgentResourcesClassic, swarmBaseFile, swarmMasterResources, swarmMasterVars, swarmWinAgentResourcesVMAS, swarmWinAgentResourcesVMSS}
-var swarmModeTemplateFiles = []string{swarmBaseFile, swarmAgentResourcesVMAS, swarmAgentVars, swarmAgentResourcesVMSS, swarmAgentResourcesClassic, swarmBaseFile, swarmMasterResources, swarmMasterVars, swarmWinAgentResourcesVMAS, swarmWinAgentResourcesVMSS}
+var swarmTemplateFiles = []string{swarmBaseFile, swarmParams, swarmAgentResourcesVMAS, swarmAgentVars, swarmAgentResourcesVMSS, swarmAgentResourcesClassic, swarmBaseFile, swarmMasterResources, swarmMasterVars, swarmWinAgentResourcesVMAS, swarmWinAgentResourcesVMSS}
+var swarmModeTemplateFiles = []string{swarmBaseFile, swarmParams, swarmAgentResourcesVMAS, swarmAgentVars, swarmAgentResourcesVMSS, swarmAgentResourcesClassic, swarmBaseFile, swarmMasterResources, swarmMasterVars, swarmWinAgentResourcesVMAS, swarmWinAgentResourcesVMSS}
 
 /**
  The following parameters could be either a plain text, or referenced to a secret in a keyvault:
@@ -182,7 +198,8 @@ func init() {
 }
 
 func (t *TemplateGenerator) verifyFiles() error {
-	allFiles := append(commonTemplateFiles, dcosTemplateFiles...)
+	allFiles := commonTemplateFiles
+	allFiles = append(allFiles, dcosTemplateFiles...)
 	allFiles = append(allFiles, kubernetesTemplateFiles...)
 	allFiles = append(allFiles, swarmTemplateFiles...)
 	for _, file := range allFiles {
@@ -258,6 +275,10 @@ func (t *TemplateGenerator) GenerateTemplate(containerService *api.ContainerServ
 		}
 	}()
 
+	if !ValidateDistro(containerService) {
+		return templateRaw, parametersRaw, certsGenerated, fmt.Errorf("Invalid distro")
+	}
+
 	var b bytes.Buffer
 	if err = templ.ExecuteTemplate(&b, baseFile, properties); err != nil {
 		return templateRaw, parametersRaw, certsGenerated, err
@@ -283,7 +304,13 @@ func GenerateClusterID(properties *api.Properties) string {
 	// the name suffix uniquely identifies the cluster and is generated off a hash
 	// from the master dns name
 	h := fnv.New64a()
-	h.Write([]byte(properties.MasterProfile.DNSPrefix))
+	if properties.MasterProfile != nil {
+		h.Write([]byte(properties.MasterProfile.DNSPrefix))
+	} else if properties.HostedMasterProfile != nil {
+		h.Write([]byte(properties.HostedMasterProfile.DNSPrefix))
+	} else {
+		h.Write([]byte(properties.AgentPoolProfiles[0].Name))
+	}
 	rand.Seed(int64(h.Sum64()))
 	return fmt.Sprintf("%08d", rand.Uint32())[:uniqueNameSuffixSize]
 }
@@ -299,8 +326,25 @@ func GenerateKubeConfig(properties *api.Properties, location string) (string, er
 	kubeconfig = strings.Replace(kubeconfig, "{{WrapAsVerbatim \"variables('caCertificate')\"}}", base64.StdEncoding.EncodeToString([]byte(properties.CertificateProfile.CaCertificate)), -1)
 	kubeconfig = strings.Replace(kubeconfig, "{{WrapAsVerbatim \"reference(concat('Microsoft.Network/publicIPAddresses/', variables('masterPublicIPAddressName'))).dnsSettings.fqdn\"}}", FormatAzureProdFQDN(properties.MasterProfile.DNSPrefix, location), -1)
 	kubeconfig = strings.Replace(kubeconfig, "{{WrapAsVariable \"resourceGroup\"}}", properties.MasterProfile.DNSPrefix, -1)
-	kubeconfig = strings.Replace(kubeconfig, "{{WrapAsVerbatim \"variables('kubeConfigCertificate')\"}}", base64.StdEncoding.EncodeToString([]byte(properties.CertificateProfile.KubeConfigCertificate)), -1)
-	kubeconfig = strings.Replace(kubeconfig, "{{WrapAsVerbatim \"variables('kubeConfigPrivateKey')\"}}", base64.StdEncoding.EncodeToString([]byte(properties.CertificateProfile.KubeConfigPrivateKey)), -1)
+
+	var authInfo string
+	if properties.AADProfile == nil {
+		authInfo = fmt.Sprintf("{\"client-certificate-data\":\"%v\",\"client-key-data\":\"%v\"}",
+			base64.StdEncoding.EncodeToString([]byte(properties.CertificateProfile.KubeConfigCertificate)),
+			base64.StdEncoding.EncodeToString([]byte(properties.CertificateProfile.KubeConfigPrivateKey)))
+	} else {
+		tenantID := properties.AADProfile.TenantID
+		if len(tenantID) == 0 {
+			tenantID = "common"
+		}
+
+		authInfo = fmt.Sprintf("{\"auth-provider\":{\"name\":\"azure\",\"config\":{\"environment\":\"%v\",\"tenant-id\":\"%v\",\"apiserver-id\":\"%v\",\"client-id\":\"%v\"}}}",
+			GetCloudTargetEnv(location),
+			tenantID,
+			properties.AADProfile.ServerAppID,
+			properties.AADProfile.ClientAppID)
+	}
+	kubeconfig = strings.Replace(kubeconfig, "{{authInfo}}", authInfo, -1)
 
 	return kubeconfig, nil
 }
@@ -328,6 +372,28 @@ func (t *TemplateGenerator) prepareTemplateFiles(properties *api.Properties) ([]
 	return files, baseFile, nil
 }
 
+// FormatAzureProdFQDNs constructs all possible Azure prod fqdn
+func FormatAzureProdFQDNs(fqdnPrefix string) []string {
+	var fqdns []string
+	for _, location := range AzureLocations {
+		fqdns = append(fqdns, FormatAzureProdFQDN(fqdnPrefix, location))
+	}
+	return fqdns
+}
+
+// FormatAzureProdFQDN constructs an Azure prod fqdn
+func FormatAzureProdFQDN(fqdnPrefix string, location string) string {
+	FQDNFormat := AzureCloudSpec.EndpointConfig.ResourceManagerVMDNSSuffix
+	if location == "chinaeast" || location == "chinanorth" {
+		FQDNFormat = AzureChinaCloudSpec.EndpointConfig.ResourceManagerVMDNSSuffix
+	} else if location == "germanynortheast" || location == "germanycentral" {
+		FQDNFormat = AzureGermanCloudSpec.EndpointConfig.ResourceManagerVMDNSSuffix
+	} else if location == "usgovvirginia" || location == "usgoviowa" {
+		FQDNFormat = AzureUSGovernmentCloud.EndpointConfig.ResourceManagerVMDNSSuffix
+	}
+	return fmt.Sprintf("%s.%s."+FQDNFormat, fqdnPrefix, location)
+}
+
 //GetCloudSpecConfig returns the kubenernetes container images url configurations based on the deploy target environment
 //for example: if the target is the public azure, then the default container image url should be gcrio.azureedge.net/google_container/...
 //if the target is azure china, then the default container image should be mirror.azure.cn:5000/google_container/...
@@ -335,10 +401,30 @@ func GetCloudSpecConfig(location string) AzureEnvironmentSpecConfig {
 	switch GetCloudTargetEnv(location) {
 	case azureChinaCloud:
 		return AzureChinaCloudSpec
-	//TODO - add cloud specs for germany and usgov
+	case azureGermanCloud:
+		return AzureGermanCloudSpec
+	case azureUSGovernmentCloud:
+		return AzureUSGovernmentCloud
 	default:
 		return AzureCloudSpec
 	}
+}
+
+// ValidateDistro checks if the requested orchestrator type is supported on the requested Linux distro.
+func ValidateDistro(cs *api.ContainerService) bool {
+	// Check Master distro
+	if cs.Properties.MasterProfile != nil && cs.Properties.MasterProfile.Distro == api.RHEL && cs.Properties.OrchestratorProfile.OrchestratorType != api.SwarmMode {
+		log.Fatalf("Orchestrator type %s not suported on RHEL Master", cs.Properties.OrchestratorProfile.OrchestratorType)
+		return false
+	}
+	// Check Agent distros
+	for _, agentProfile := range cs.Properties.AgentPoolProfiles {
+		if agentProfile.Distro == api.RHEL && cs.Properties.OrchestratorProfile.OrchestratorType != api.SwarmMode {
+			log.Fatalf("Orchestrator type %s not suported on RHEL Agent", cs.Properties.OrchestratorProfile.OrchestratorType)
+			return false
+		}
+	}
+	return true
 }
 
 // GetCloudTargetEnv determines and returns whether the region is a sovereign cloud which
@@ -362,21 +448,42 @@ func getParameters(cs *api.ContainerService, isClassicMode bool) (paramsMap, err
 	properties := cs.Properties
 	location := cs.Location
 	parametersMap := paramsMap{}
+	cloudSpecConfig := GetCloudSpecConfig(location)
 
 	// Master Parameters
 	addValue(parametersMap, "location", location)
+	addValue(parametersMap, "osImageOffer", cloudSpecConfig.OSImageConfig[api.Ubuntu].ImageOffer)
+	addValue(parametersMap, "osImageSKU", cloudSpecConfig.OSImageConfig[api.Ubuntu].ImageSku)
+	addValue(parametersMap, "osImagePublisher", cloudSpecConfig.OSImageConfig[api.Ubuntu].ImagePublisher)
+	addValue(parametersMap, "osImageVersion", cloudSpecConfig.OSImageConfig[api.Ubuntu].ImageVersion)
+	addValue(parametersMap, "fqdnEndpointSuffix", cloudSpecConfig.EndpointConfig.ResourceManagerVMDNSSuffix)
 	addValue(parametersMap, "targetEnvironment", GetCloudTargetEnv(location))
 	addValue(parametersMap, "linuxAdminUsername", properties.LinuxProfile.AdminUsername)
-	addValue(parametersMap, "masterEndpointDNSNamePrefix", properties.MasterProfile.DNSPrefix)
-	if properties.MasterProfile.IsCustomVNET() {
-		addValue(parametersMap, "masterVnetSubnetID", properties.MasterProfile.VnetSubnetID)
-	} else {
-		addValue(parametersMap, "masterSubnet", properties.MasterProfile.Subnet)
+	// masterEndpointDNSNamePrefix is the basis for storage account creation across dcos, swarm, and k8s
+	if properties.MasterProfile != nil {
+		// MasterProfile exists, uses master DNS prefix
+		addValue(parametersMap, "masterEndpointDNSNamePrefix", properties.MasterProfile.DNSPrefix)
+	} else if properties.HostedMasterProfile != nil {
+		// Agents only, use cluster DNS prefix
+		addValue(parametersMap, "masterEndpointDNSNamePrefix", properties.HostedMasterProfile.DNSPrefix)
 	}
-	addValue(parametersMap, "firstConsecutiveStaticIP", properties.MasterProfile.FirstConsecutiveStaticIP)
-	addValue(parametersMap, "masterVMSize", properties.MasterProfile.VMSize)
-	if isClassicMode {
-		addValue(parametersMap, "masterCount", properties.MasterProfile.Count)
+	if properties.MasterProfile != nil {
+		if properties.MasterProfile.IsCustomVNET() {
+			addValue(parametersMap, "masterVnetSubnetID", properties.MasterProfile.VnetSubnetID)
+			if properties.OrchestratorProfile.IsKubernetes() {
+				addValue(parametersMap, "vnetCidr", properties.MasterProfile.VnetCidr)
+			}
+		} else {
+			addValue(parametersMap, "masterSubnet", properties.MasterProfile.Subnet)
+		}
+		addValue(parametersMap, "firstConsecutiveStaticIP", properties.MasterProfile.FirstConsecutiveStaticIP)
+		addValue(parametersMap, "masterVMSize", properties.MasterProfile.VMSize)
+		if isClassicMode {
+			addValue(parametersMap, "masterCount", properties.MasterProfile.Count)
+		}
+	}
+	if properties.HostedMasterProfile != nil {
+		addValue(parametersMap, "masterSubnet", properties.HostedMasterProfile.Subnet)
 	}
 	addValue(parametersMap, "sshRSAPublicKey", properties.LinuxProfile.SSH.PublicKeys[0].KeyData)
 	for i, s := range properties.LinuxProfile.Secrets {
@@ -386,35 +493,58 @@ func getParameters(cs *api.ContainerService, isClassicMode bool) (paramsMap, err
 		}
 	}
 
-	cloudSpecConfig := GetCloudSpecConfig(location)
+	//Swarm and SwarmMode Parameters
+	if properties.OrchestratorProfile.OrchestratorType == api.Swarm || properties.OrchestratorProfile.OrchestratorType == api.SwarmMode {
+		var dockerEngineRepo, dockerComposeDownloadURL string
+		if cloudSpecConfig.DockerSpecConfig.DockerEngineRepo == "" {
+			dockerEngineRepo = DefaultDockerEngineRepo
+		} else {
+			dockerEngineRepo = cloudSpecConfig.DockerSpecConfig.DockerEngineRepo
+		}
+		if cloudSpecConfig.DockerSpecConfig.DockerComposeDownloadURL == "" {
+			dockerComposeDownloadURL = DefaultDockerComposeURL
+		} else {
+			dockerComposeDownloadURL = cloudSpecConfig.DockerSpecConfig.DockerComposeDownloadURL
+		}
+		addValue(parametersMap, "dockerEngineDownloadRepo", dockerEngineRepo)
+		addValue(parametersMap, "dockerComposeDownloadURL", dockerComposeDownloadURL)
+	}
+
 	// Kubernetes Parameters
 	if properties.OrchestratorProfile.OrchestratorType == api.Kubernetes {
-		KubernetesVersion := properties.OrchestratorProfile.OrchestratorVersion
+		KubernetesRelease := properties.OrchestratorProfile.OrchestratorRelease
 
-		kubernetesHyperkubeSpec := properties.OrchestratorProfile.KubernetesConfig.KubernetesImageBase + KubeImages[KubernetesVersion]["hyperkube"]
+		kubernetesHyperkubeSpec := properties.OrchestratorProfile.KubernetesConfig.KubernetesImageBase + KubeConfigs[KubernetesRelease]["hyperkube"]
 		if properties.OrchestratorProfile.KubernetesConfig.CustomHyperkubeImage != "" {
 			kubernetesHyperkubeSpec = properties.OrchestratorProfile.KubernetesConfig.CustomHyperkubeImage
 		}
 
-		addSecret(parametersMap, "apiServerCertificate", properties.CertificateProfile.APIServerCertificate, true)
-		addSecret(parametersMap, "apiServerPrivateKey", properties.CertificateProfile.APIServerPrivateKey, true)
-		addSecret(parametersMap, "caCertificate", properties.CertificateProfile.CaCertificate, true)
-		addSecret(parametersMap, "caPrivateKey", properties.CertificateProfile.CaPrivateKey, true)
-		addSecret(parametersMap, "clientCertificate", properties.CertificateProfile.ClientCertificate, true)
-		addSecret(parametersMap, "clientPrivateKey", properties.CertificateProfile.ClientPrivateKey, true)
-		addSecret(parametersMap, "kubeConfigCertificate", properties.CertificateProfile.KubeConfigCertificate, true)
-		addSecret(parametersMap, "kubeConfigPrivateKey", properties.CertificateProfile.KubeConfigPrivateKey, true)
+		if properties.CertificateProfile != nil {
+			addSecret(parametersMap, "apiServerCertificate", properties.CertificateProfile.APIServerCertificate, true)
+			addSecret(parametersMap, "apiServerPrivateKey", properties.CertificateProfile.APIServerPrivateKey, true)
+			addSecret(parametersMap, "caCertificate", properties.CertificateProfile.CaCertificate, true)
+			addSecret(parametersMap, "caPrivateKey", properties.CertificateProfile.CaPrivateKey, true)
+			addSecret(parametersMap, "clientCertificate", properties.CertificateProfile.ClientCertificate, true)
+			addSecret(parametersMap, "clientPrivateKey", properties.CertificateProfile.ClientPrivateKey, true)
+			addSecret(parametersMap, "kubeConfigCertificate", properties.CertificateProfile.KubeConfigCertificate, true)
+			addSecret(parametersMap, "kubeConfigPrivateKey", properties.CertificateProfile.KubeConfigPrivateKey, true)
+		}
+		if properties.HostedMasterProfile != nil && properties.HostedMasterProfile.FQDN != "" {
+			addValue(parametersMap, "kubernetesEndpoint", properties.HostedMasterProfile.FQDN)
+		}
 		addValue(parametersMap, "dockerEngineDownloadRepo", cloudSpecConfig.DockerSpecConfig.DockerEngineRepo)
+		addValue(parametersMap, "kubeDNSServiceIP", properties.OrchestratorProfile.KubernetesConfig.DNSServiceIP)
+		addValue(parametersMap, "kubeServiceCidr", properties.OrchestratorProfile.KubernetesConfig.ServiceCIDR)
 		addValue(parametersMap, "kubernetesHyperkubeSpec", kubernetesHyperkubeSpec)
-		addValue(parametersMap, "kubernetesAddonManagerSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeImages[KubernetesVersion]["addonmanager"])
-		addValue(parametersMap, "kubernetesAddonResizerSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeImages[KubernetesVersion]["addonresizer"])
-		addValue(parametersMap, "kubernetesDashboardSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeImages[KubernetesVersion]["dashboard"])
-		addValue(parametersMap, "kubernetesDNSMasqSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeImages[KubernetesVersion]["dnsmasq"])
-		addValue(parametersMap, "kubernetesExecHealthzSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeImages[KubernetesVersion]["exechealthz"])
-		addValue(parametersMap, "kubernetesHeapsterSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeImages[KubernetesVersion]["heapster"])
-		addValue(parametersMap, "kubernetesTillerSpec", cloudSpecConfig.KubernetesSpecConfig.TillerImageBase+KubeImages[KubernetesVersion]["tiller"])
-		addValue(parametersMap, "kubernetesKubeDNSSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeImages[KubernetesVersion]["dns"])
-		addValue(parametersMap, "kubernetesPodInfraContainerSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeImages[KubernetesVersion]["pause"])
+		addValue(parametersMap, "kubernetesAddonManagerSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeConfigs[KubernetesRelease]["addonmanager"])
+		addValue(parametersMap, "kubernetesAddonResizerSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeConfigs[KubernetesRelease]["addonresizer"])
+		addValue(parametersMap, "kubernetesDashboardSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeConfigs[KubernetesRelease]["dashboard"])
+		addValue(parametersMap, "kubernetesDNSMasqSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeConfigs[KubernetesRelease]["dnsmasq"])
+		addValue(parametersMap, "kubernetesExecHealthzSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeConfigs[KubernetesRelease]["exechealthz"])
+		addValue(parametersMap, "kubernetesHeapsterSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeConfigs[KubernetesRelease]["heapster"])
+		addValue(parametersMap, "kubernetesTillerSpec", cloudSpecConfig.KubernetesSpecConfig.TillerImageBase+KubeConfigs[KubernetesRelease]["tiller"])
+		addValue(parametersMap, "kubernetesKubeDNSSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeConfigs[KubernetesRelease]["dns"])
+		addValue(parametersMap, "kubernetesPodInfraContainerSpec", cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase+KubeConfigs[KubernetesRelease]["pause"])
 		addValue(parametersMap, "kubernetesNodeStatusUpdateFrequency", properties.OrchestratorProfile.KubernetesConfig.NodeStatusUpdateFrequency)
 		addValue(parametersMap, "kubernetesCtrlMgrNodeMonitorGracePeriod", properties.OrchestratorProfile.KubernetesConfig.CtrlMgrNodeMonitorGracePeriod)
 		addValue(parametersMap, "kubernetesCtrlMgrPodEvictionTimeout", properties.OrchestratorProfile.KubernetesConfig.CtrlMgrPodEvictionTimeout)
@@ -430,36 +560,57 @@ func getParameters(cs *api.ContainerService, isClassicMode bool) (paramsMap, err
 		addValue(parametersMap, "kubeClusterCidr", properties.OrchestratorProfile.KubernetesConfig.ClusterSubnet)
 		addValue(parametersMap, "dockerBridgeCidr", properties.OrchestratorProfile.KubernetesConfig.DockerBridgeSubnet)
 		addValue(parametersMap, "networkPolicy", properties.OrchestratorProfile.KubernetesConfig.NetworkPolicy)
-		if properties.OrchestratorProfile.KubernetesConfig != nil &&
-			!properties.OrchestratorProfile.KubernetesConfig.UseManagedIdentity {
-			addValue(parametersMap, "servicePrincipalClientId", properties.ServicePrincipalProfile.ClientID)
+		addValue(parametersMap, "cniPluginsURL", cloudSpecConfig.KubernetesSpecConfig.CNIPluginsDownloadURL)
+		addValue(parametersMap, "vnetCniLinuxPluginsURL", cloudSpecConfig.KubernetesSpecConfig.VnetCNILinuxPluginsDownloadURL)
+		addValue(parametersMap, "vnetCniWindowsPluginsURL", cloudSpecConfig.KubernetesSpecConfig.VnetCNIWindowsPluginsDownloadURL)
+		addValue(parametersMap, "calicoConfigURL", cloudSpecConfig.KubernetesSpecConfig.CalicoConfigDownloadURL)
+		addValue(parametersMap, "maxPods", properties.OrchestratorProfile.KubernetesConfig.MaxPods)
+		addValue(parametersMap, "gchighthreshold", properties.OrchestratorProfile.KubernetesConfig.GCHighThreshold)
+		addValue(parametersMap, "gclowthreshold", properties.OrchestratorProfile.KubernetesConfig.GCLowThreshold)
 
-			if properties.ServicePrincipalProfile.KeyvaultSecretRef != "" {
-				addSecret(parametersMap, "servicePrincipalClientSecret", properties.ServicePrincipalProfile.KeyvaultSecretRef, false)
+		if properties.OrchestratorProfile.KubernetesConfig == nil ||
+			!properties.OrchestratorProfile.KubernetesConfig.UseManagedIdentity {
+
+			addValue(parametersMap, "servicePrincipalClientId", properties.ServicePrincipalProfile.ClientID)
+			if properties.ServicePrincipalProfile.KeyvaultSecretRef != nil {
+				addKeyvaultReference(parametersMap, "servicePrincipalClientSecret",
+					properties.ServicePrincipalProfile.KeyvaultSecretRef.VaultID,
+					properties.ServicePrincipalProfile.KeyvaultSecretRef.SecretName,
+					properties.ServicePrincipalProfile.KeyvaultSecretRef.SecretVersion)
 			} else {
 				addValue(parametersMap, "servicePrincipalClientSecret", properties.ServicePrincipalProfile.Secret)
 			}
 		}
+
+		if properties.AADProfile != nil {
+			addValue(parametersMap, "aadTenantId", properties.AADProfile.TenantID)
+			addValue(parametersMap, "aadServerAppId", properties.AADProfile.ServerAppID)
+		}
 	}
 
-	if strings.HasPrefix(string(properties.OrchestratorProfile.OrchestratorType), string(api.DCOS)) {
+	if strings.HasPrefix(properties.OrchestratorProfile.OrchestratorType, api.DCOS) {
 		dcosBootstrapURL := cloudSpecConfig.DCOSSpecConfig.DCOS188BootstrapDownloadURL
+		dcosWindowsBootstrapURL := cloudSpecConfig.DCOSSpecConfig.DCOSWindowsBootstrapDownloadURL
 		switch properties.OrchestratorProfile.OrchestratorType {
 		case api.DCOS:
-			switch properties.OrchestratorProfile.OrchestratorVersion {
-			case api.DCOS173:
-				dcosBootstrapURL = cloudSpecConfig.DCOSSpecConfig.DCOS173BootstrapDownloadURL
-			case api.DCOS184:
-				dcosBootstrapURL = cloudSpecConfig.DCOSSpecConfig.DCOS184BootstrapDownloadURL
-			case api.DCOS187:
-				dcosBootstrapURL = cloudSpecConfig.DCOSSpecConfig.DCOS187BootstrapDownloadURL
-			case api.DCOS188:
+			switch properties.OrchestratorProfile.OrchestratorRelease {
+			case api.DCOSRelease1Dot8:
 				dcosBootstrapURL = cloudSpecConfig.DCOSSpecConfig.DCOS188BootstrapDownloadURL
-			case api.DCOS190:
+			case api.DCOSRelease1Dot9:
 				dcosBootstrapURL = cloudSpecConfig.DCOSSpecConfig.DCOS190BootstrapDownloadURL
+			case api.DCOSRelease1Dot10:
+				dcosBootstrapURL = cloudSpecConfig.DCOSSpecConfig.DCOS110BootstrapDownloadURL
 			}
 		}
+
+		if properties.OrchestratorProfile.DcosConfig != nil {
+			if properties.OrchestratorProfile.DcosConfig.DcosWindowsBootstrapURL != "" {
+				dcosWindowsBootstrapURL = properties.OrchestratorProfile.DcosConfig.DcosWindowsBootstrapURL
+			}
+		}
+
 		addValue(parametersMap, "dcosBootstrapURL", dcosBootstrapURL)
+		addValue(parametersMap, "dcosWindowsBootstrapURL", dcosWindowsBootstrapURL)
 	}
 
 	// Agent parameters
@@ -480,10 +631,14 @@ func getParameters(cs *api.ContainerService, isClassicMode bool) (paramsMap, err
 	if properties.HasWindows() {
 		addValue(parametersMap, "windowsAdminUsername", properties.WindowsProfile.AdminUsername)
 		addSecret(parametersMap, "windowsAdminPassword", properties.WindowsProfile.AdminPassword, false)
+		if properties.WindowsProfile.ImageVersion != "" {
+			addValue(parametersMap, "agentWindowsVersion", properties.WindowsProfile.ImageVersion)
+		}
 		if properties.OrchestratorProfile.OrchestratorType == api.Kubernetes {
-			KubernetesVersion := properties.OrchestratorProfile.OrchestratorVersion
-			addValue(parametersMap, "kubeBinariesSASURL", cloudSpecConfig.KubernetesSpecConfig.KubeBinariesSASURLBase+KubeImages[KubernetesVersion]["windowszip"])
-			addValue(parametersMap, "kubeBinariesVersion", KubernetesVersion)
+			KubernetesRelease := properties.OrchestratorProfile.OrchestratorRelease
+			addValue(parametersMap, "kubeBinariesSASURL", cloudSpecConfig.KubernetesSpecConfig.KubeBinariesSASURLBase+KubeConfigs[KubernetesRelease]["windowszip"])
+			addValue(parametersMap, "kubeBinariesVersion", api.KubernetesReleaseToVersion[KubernetesRelease])
+			addValue(parametersMap, "windowsTelemetryGUID", cloudSpecConfig.KubernetesSpecConfig.WindowsTelemetryGUID)
 		}
 		for i, s := range properties.WindowsProfile.Secrets {
 			addValue(parametersMap, fmt.Sprintf("windowsKeyVaultID%d", i), s.SourceVault.ID)
@@ -494,12 +649,35 @@ func getParameters(cs *api.ContainerService, isClassicMode bool) (paramsMap, err
 		}
 	}
 
+	for _, extension := range properties.ExtensionProfiles {
+		if extension.ExtensionParametersKeyVaultRef != nil {
+			addKeyvaultReference(parametersMap, fmt.Sprintf("%sParameters", extension.Name),
+				extension.ExtensionParametersKeyVaultRef.VaultID,
+				extension.ExtensionParametersKeyVaultRef.SecretName,
+				extension.ExtensionParametersKeyVaultRef.SecretVersion)
+		} else {
+			addValue(parametersMap, fmt.Sprintf("%sParameters", extension.Name), extension.ExtensionParameters)
+		}
+	}
+
 	return parametersMap, nil
 }
 
 func addValue(m paramsMap, k string, v interface{}) {
 	m[k] = paramsMap{
 		"value": v,
+	}
+}
+
+func addKeyvaultReference(m paramsMap, k string, vaultID, secretName, secretVersion string) {
+	m[k] = paramsMap{
+		"reference": &KeyVaultRef{
+			KeyVault: KeyVaultID{
+				ID: vaultID,
+			},
+			SecretName:    secretName,
+			SecretVersion: secretVersion,
+		},
 	}
 }
 
@@ -518,46 +696,7 @@ func addSecret(m paramsMap, k string, v interface{}, encode bool) {
 		}
 		return
 	}
-
-	m[k] = paramsMap{
-		"reference": &KeyVaultRef{
-			KeyVault: KeyVaultID{
-				ID: parts[1],
-			},
-			SecretName:    parts[2],
-			SecretVersion: parts[4],
-		},
-	}
-}
-
-// VersionOrdinal checks equality between two orchestrator version numbers
-func VersionOrdinal(version string) string {
-	// ISO/IEC 14651:2011
-	const maxByte = 1<<8 - 1
-	vo := make([]byte, 0, len(version)+8)
-	j := -1
-	for i := 0; i < len(version); i++ {
-		b := version[i]
-		if '0' > b || b > '9' {
-			vo = append(vo, b)
-			j = -1
-			continue
-		}
-		if j == -1 {
-			vo = append(vo, 0x00)
-			j = len(vo) - 1
-		}
-		if vo[j] == 1 && vo[j+1] == '0' {
-			vo[j+1] = b
-			continue
-		}
-		if vo[j]+1 > maxByte {
-			panic("VersionOrdinal: invalid version")
-		}
-		vo = append(vo, b)
-		vo[j]++
-	}
-	return string(vo)
+	addKeyvaultReference(m, k, parts[1], parts[2], parts[4])
 }
 
 // getStorageAccountType returns the support managed disk storage tier for a give VM size
@@ -576,32 +715,21 @@ func getStorageAccountType(sizeName string) (string, error) {
 // getTemplateFuncMap returns all functions used in template generation
 func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) template.FuncMap {
 	return template.FuncMap{
-		"IsDCOS173": func() bool {
-			return cs.Properties.OrchestratorProfile.OrchestratorType == api.DCOS &&
-				cs.Properties.OrchestratorProfile.OrchestratorVersion == api.DCOS173
+		"IsHostedMaster": func() bool {
+			return cs.Properties.HostedMasterProfile != nil
 		},
-		"IsDCOS184": func() bool {
+		"IsDCOS19": func() bool {
 			return cs.Properties.OrchestratorProfile.OrchestratorType == api.DCOS &&
-				cs.Properties.OrchestratorProfile.OrchestratorVersion == api.DCOS184
+				cs.Properties.OrchestratorProfile.OrchestratorRelease == api.DCOSRelease1Dot9
 		},
-		"IsDCOS187": func() bool {
+		"IsDCOS110": func() bool {
 			return cs.Properties.OrchestratorProfile.OrchestratorType == api.DCOS &&
-				cs.Properties.OrchestratorProfile.OrchestratorVersion == api.DCOS187
-		},
-		"IsDCOS188": func() bool {
-			return cs.Properties.OrchestratorProfile.OrchestratorType == api.DCOS &&
-				cs.Properties.OrchestratorProfile.OrchestratorVersion == api.DCOS188
-		},
-		"IsDCOS190": func() bool {
-			return cs.Properties.OrchestratorProfile.OrchestratorType == api.DCOS &&
-				cs.Properties.OrchestratorProfile.OrchestratorVersion == api.DCOS190
+				cs.Properties.OrchestratorProfile.OrchestratorRelease == api.DCOSRelease1Dot10
 		},
 		"IsKubernetesVersionGe": func(version string) bool {
-			targetVersion := version
-			targetVersionOrdinal := VersionOrdinal(targetVersion)
-			orchestratorVersionOrdinal := VersionOrdinal(cs.Properties.OrchestratorProfile.OrchestratorVersion)
-			return cs.Properties.OrchestratorProfile.OrchestratorType == api.Kubernetes &&
-				orchestratorVersionOrdinal >= targetVersionOrdinal
+			orchestratorVersion, _ := semver.NewVersion(cs.Properties.OrchestratorProfile.OrchestratorVersion)
+			constraint, _ := semver.NewConstraint(">=" + version)
+			return cs.Properties.OrchestratorProfile.OrchestratorType == api.Kubernetes && constraint.Check(orchestratorVersion)
 		},
 		"GetKubernetesLabels": func(profile *api.AgentPoolProfile) string {
 			var buf bytes.Buffer
@@ -664,16 +792,43 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 		"GetDCOSMasterCustomData": func() string {
 			masterProvisionScript := getDCOSMasterProvisionScript()
 			masterAttributeContents := getDCOSMasterCustomNodeLabels()
-			str := getSingleLineDCOSCustomData(cs.Properties.OrchestratorProfile.OrchestratorType, cs.Properties.OrchestratorProfile.OrchestratorVersion, cs.Properties.MasterProfile.Count, masterProvisionScript, masterAttributeContents)
+			masterPreprovisionExtension := ""
+			if cs.Properties.MasterProfile.PreprovisionExtension != nil {
+				masterPreprovisionExtension += "\n"
+				masterPreprovisionExtension += makeMasterExtensionScriptCommands(cs)
+			}
+
+			str := getSingleLineDCOSCustomData(
+				cs.Properties.OrchestratorProfile.OrchestratorType,
+				cs.Properties.OrchestratorProfile.OrchestratorRelease,
+				cs.Properties.MasterProfile.Count, masterProvisionScript,
+				masterAttributeContents, masterPreprovisionExtension)
 
 			return fmt.Sprintf("\"customData\": \"[base64(concat('#cloud-config\\n\\n', '%s'))]\",", str)
 		},
 		"GetDCOSAgentCustomData": func(profile *api.AgentPoolProfile) string {
 			agentProvisionScript := getDCOSAgentProvisionScript(profile)
 			attributeContents := getDCOSAgentCustomNodeLabels(profile)
-			str := getSingleLineDCOSCustomData(cs.Properties.OrchestratorProfile.OrchestratorType, cs.Properties.OrchestratorProfile.OrchestratorVersion, cs.Properties.MasterProfile.Count, agentProvisionScript, attributeContents)
+			agentPreprovisionExtension := ""
+			if profile.PreprovisionExtension != nil {
+				agentPreprovisionExtension += "\n"
+				agentPreprovisionExtension += makeAgentExtensionScriptCommands(cs, profile)
+			}
+
+			str := getSingleLineDCOSCustomData(
+				cs.Properties.OrchestratorProfile.OrchestratorType,
+				cs.Properties.OrchestratorProfile.OrchestratorRelease,
+				cs.Properties.MasterProfile.Count, agentProvisionScript,
+				attributeContents, agentPreprovisionExtension)
 
 			return fmt.Sprintf("\"customData\": \"[base64(concat('#cloud-config\\n\\n', '%s'))]\",", str)
+		},
+		"GetDCOSWindowsAgentCustomData": func(profile *api.AgentPoolProfile) string {
+			str := getBase64CustomScript(dcosWindowsProvision)
+			return fmt.Sprintf("\"customData\": \"%s\"", str)
+		},
+		"GetDCOSWindowsAgentCustomNodeAttributes": func(profile *api.AgentPoolProfile) string {
+			return getDCOSWindowsAgentCustomAttributes(profile)
 		},
 		"GetMasterAllowedSizes": func() string {
 			if t.ClassicMode {
@@ -690,6 +845,12 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 				return GetKubernetesAgentAllowedSizes()
 			}
 			return GetMasterAgentAllowedSizes()
+		},
+		"getSwarmVersions": func() string {
+			return getSwarmVersions(api.SwarmVersion, api.SwarmDockerComposeVersion)
+		},
+		"GetSwarmModeVersions": func() string {
+			return getSwarmVersions(api.DockerCEVersion, api.DockerCEDockerComposeVersion)
 		},
 		"GetSizeMap": func() string {
 			if t.ClassicMode {
@@ -721,14 +882,19 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 			}
 
 			// add artifacts and addons
-			for placeholder, filename := range kubernetesAritfacts {
+			var artifiacts map[string]string
+			if profile.OrchestratorProfile.OrchestratorRelease == api.KubernetesRelease1Dot5 {
+				artifiacts = kubernetesAritfacts15
+			} else {
+				artifiacts = kubernetesAritfacts
+			}
+			for placeholder, filename := range artifiacts {
 				addonTextContents := getBase64CustomScript(filename)
 				str = strings.Replace(str, placeholder, addonTextContents, -1)
 			}
 
 			var addonYamls map[string]string
-			if profile.OrchestratorProfile.OrchestratorVersion == api.Kubernetes153 ||
-				profile.OrchestratorProfile.OrchestratorVersion == api.Kubernetes157 {
+			if profile.OrchestratorProfile.OrchestratorRelease == api.KubernetesRelease1Dot5 {
 				addonYamls = kubernetesAddonYamls15
 			} else {
 				addonYamls = kubernetesAddonYamls
@@ -740,8 +906,7 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 
 			// add calico manifests
 			if profile.OrchestratorProfile.KubernetesConfig.NetworkPolicy == "calico" {
-				if profile.OrchestratorProfile.OrchestratorVersion == api.Kubernetes153 ||
-					profile.OrchestratorProfile.OrchestratorVersion == api.Kubernetes157 {
+				if profile.OrchestratorProfile.OrchestratorRelease == api.KubernetesRelease1Dot5 {
 					calicoAddonYamls = calicoAddonYamls15
 				}
 				for placeholder, filename := range calicoAddonYamls {
@@ -760,27 +925,68 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 			}
 
 			// add artifacts
-			for placeholder, filename := range kubernetesAritfacts {
+			var artifiacts map[string]string
+			if cs.Properties.OrchestratorProfile.OrchestratorVersion == api.KubernetesRelease1Dot5 {
+				artifiacts = kubernetesAritfacts15
+			} else {
+				artifiacts = kubernetesAritfacts
+			}
+			for placeholder, filename := range artifiacts {
 				addonTextContents := getBase64CustomScript(filename)
 				str = strings.Replace(str, placeholder, addonTextContents, -1)
 			}
 
 			return fmt.Sprintf("\"customData\": \"[base64(concat('%s'))]\",", str)
 		},
+		"WriteLinkedTemplatesForExtensions": func() string {
+			extensions := getLinkedTemplatesForExtensions(cs.Properties)
+			return extensions
+		},
 		"GetKubernetesB64Provision": func() string {
 			return getBase64CustomScript(kubernetesMasterCustomScript)
+		},
+		"GetKubernetesB64GenerateProxyCerts": func() string {
+			return getBase64CustomScript(kubernetesMasterGenerateProxyCertsScript)
+		},
+		"GetKubernetesMasterPreprovisionYaml": func() string {
+			str := ""
+			if cs.Properties.MasterProfile.PreprovisionExtension != nil {
+				str += "\n"
+				str += makeMasterExtensionScriptCommands(cs)
+			}
+			return str
+		},
+		"GetKubernetesAgentPreprovisionYaml": func(profile *api.AgentPoolProfile) string {
+			str := ""
+			if profile.PreprovisionExtension != nil {
+				str += "\n"
+				str += makeAgentExtensionScriptCommands(cs, profile)
+			}
+			return str
 		},
 		"GetMasterSwarmCustomData": func() string {
 			files := []string{swarmProvision}
 			str := buildYamlFileWithWriteFiles(files)
+			if cs.Properties.MasterProfile.PreprovisionExtension != nil {
+				extensionStr := makeMasterExtensionScriptCommands(cs)
+				str += "'runcmd:\n" + extensionStr + "\n\n'"
+			}
 			str = escapeSingleLine(str)
-			return fmt.Sprintf("\"customData\": \"[base64('%s')]\",", str)
+			return fmt.Sprintf("\"customData\": \"[base64(concat('%s'))]\",", str)
 		},
-		"GetAgentSwarmCustomData": func() string {
+		"GetAgentSwarmCustomData": func(profile *api.AgentPoolProfile) string {
 			files := []string{swarmProvision}
 			str := buildYamlFileWithWriteFiles(files)
 			str = escapeSingleLine(str)
-			return fmt.Sprintf("\"customData\": \"[base64(concat('%s',variables('agentRunCmdFile'),variables('agentRunCmd')))]\",", str)
+			return fmt.Sprintf("\"customData\": \"[base64(concat('%s',variables('%sRunCmdFile'),variables('%sRunCmd')))]\",", str, profile.Name, profile.Name)
+		},
+		"GetSwarmAgentPreprovisionExtensionCommands": func(profile *api.AgentPoolProfile) string {
+			str := ""
+			if profile.PreprovisionExtension != nil {
+				makeAgentExtensionScriptCommands(cs, profile)
+			}
+			str = escapeSingleLine(str)
+			return str
 		},
 		"GetLocation": func() string {
 			return cs.Location
@@ -803,14 +1009,18 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 		"GetMasterSwarmModeCustomData": func() string {
 			files := []string{swarmModeProvision}
 			str := buildYamlFileWithWriteFiles(files)
+			if cs.Properties.MasterProfile.PreprovisionExtension != nil {
+				extensionStr := makeMasterExtensionScriptCommands(cs)
+				str += "runcmd:\n" + extensionStr + "\n\n"
+			}
 			str = escapeSingleLine(str)
-			return fmt.Sprintf("\"customData\": \"[base64('%s')]\",", str)
+			return fmt.Sprintf("\"customData\": \"[base64(concat('%s'))]\",", str)
 		},
-		"GetAgentSwarmModeCustomData": func() string {
+		"GetAgentSwarmModeCustomData": func(profile *api.AgentPoolProfile) string {
 			files := []string{swarmModeProvision}
 			str := buildYamlFileWithWriteFiles(files)
 			str = escapeSingleLine(str)
-			return fmt.Sprintf("\"customData\": \"[base64(concat('%s',variables('agentRunCmdFile'),variables('agentRunCmd')))]\",", str)
+			return fmt.Sprintf("\"customData\": \"[base64(concat('%s',variables('%sRunCmdFile'),variables('%sRunCmd')))]\",", str, profile.Name, profile.Name)
 		},
 		"GetKubernetesSubnets": func() string {
 			return getKubernetesSubnets(cs.Properties)
@@ -846,37 +1056,75 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 		"HasWindowsSecrets": func() bool {
 			return cs.Properties.WindowsProfile.HasSecrets()
 		},
+		"GetConfigurationScriptRootURL": func() string {
+			if cs.Properties.LinuxProfile.ScriptRootURL == "" {
+				return DefaultConfigurationScriptRootURL
+			}
+			return cs.Properties.LinuxProfile.ScriptRootURL
+		},
+		"GetMasterOSImageOffer": func() string {
+			cloudSpecConfig := GetCloudSpecConfig(cs.Location)
+			return fmt.Sprintf("\"%s\"", cloudSpecConfig.OSImageConfig[cs.Properties.MasterProfile.Distro].ImageOffer)
+		},
+		"GetMasterOSImagePublisher": func() string {
+			cloudSpecConfig := GetCloudSpecConfig(cs.Location)
+			return fmt.Sprintf("\"%s\"", cloudSpecConfig.OSImageConfig[cs.Properties.MasterProfile.Distro].ImagePublisher)
+		},
+		"GetMasterOSImageSKU": func() string {
+			cloudSpecConfig := GetCloudSpecConfig(cs.Location)
+			return fmt.Sprintf("\"%s\"", cloudSpecConfig.OSImageConfig[cs.Properties.MasterProfile.Distro].ImageSku)
+		},
+		"GetMasterOSImageVersion": func() string {
+			cloudSpecConfig := GetCloudSpecConfig(cs.Location)
+			return fmt.Sprintf("\"%s\"", cloudSpecConfig.OSImageConfig[cs.Properties.MasterProfile.Distro].ImageVersion)
+		},
+		"GetAgentOSImageOffer": func(profile *api.AgentPoolProfile) string {
+			cloudSpecConfig := GetCloudSpecConfig(cs.Location)
+			return fmt.Sprintf("\"%s\"", cloudSpecConfig.OSImageConfig[profile.Distro].ImageOffer)
+		},
+		"GetAgentOSImagePublisher": func(profile *api.AgentPoolProfile) string {
+			cloudSpecConfig := GetCloudSpecConfig(cs.Location)
+			return fmt.Sprintf("\"%s\"", cloudSpecConfig.OSImageConfig[profile.Distro].ImagePublisher)
+		},
+		"GetAgentOSImageSKU": func(profile *api.AgentPoolProfile) string {
+			cloudSpecConfig := GetCloudSpecConfig(cs.Location)
+			return fmt.Sprintf("\"%s\"", cloudSpecConfig.OSImageConfig[profile.Distro].ImageSku)
+		},
+		"GetAgentOSImageVersion": func(profile *api.AgentPoolProfile) string {
+			cloudSpecConfig := GetCloudSpecConfig(cs.Location)
+			return fmt.Sprintf("\"%s\"", cloudSpecConfig.OSImageConfig[profile.Distro].ImageVersion)
+		},
 		"PopulateClassicModeDefaultValue": func(attr string) string {
 			var val string
 			if !t.ClassicMode {
 				val = ""
 			} else {
-				kubernetesVersion := cs.Properties.OrchestratorProfile.OrchestratorVersion
+				kubernetesRelease := cs.Properties.OrchestratorProfile.OrchestratorRelease
 				cloudSpecConfig := GetCloudSpecConfig(cs.Location)
 				switch attr {
 				case "kubernetesHyperkubeSpec":
-					val = cs.Properties.OrchestratorProfile.KubernetesConfig.KubernetesImageBase + KubeImages[kubernetesVersion]["hyperkube"]
+					val = cs.Properties.OrchestratorProfile.KubernetesConfig.KubernetesImageBase + KubeConfigs[kubernetesRelease]["hyperkube"]
 					if cs.Properties.OrchestratorProfile.KubernetesConfig.CustomHyperkubeImage != "" {
 						val = cs.Properties.OrchestratorProfile.KubernetesConfig.CustomHyperkubeImage
 					}
 				case "kubernetesAddonManagerSpec":
-					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeImages[kubernetesVersion]["addonmanager"]
+					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeConfigs[kubernetesRelease]["addonmanager"]
 				case "kubernetesAddonResizerSpec":
-					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeImages[kubernetesVersion]["addonresizer"]
+					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeConfigs[kubernetesRelease]["addonresizer"]
 				case "kubernetesDashboardSpec":
-					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeImages[kubernetesVersion]["dashboard"]
+					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeConfigs[kubernetesRelease]["dashboard"]
 				case "kubernetesDNSMasqSpec":
-					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeImages[kubernetesVersion]["dnsmasq"]
+					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeConfigs[kubernetesRelease]["dnsmasq"]
 				case "kubernetesExecHealthzSpec":
-					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeImages[kubernetesVersion]["exechealthz"]
+					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeConfigs[kubernetesRelease]["exechealthz"]
 				case "kubernetesHeapsterSpec":
-					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeImages[kubernetesVersion]["heapster"]
+					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeConfigs[kubernetesRelease]["heapster"]
 				case "kubernetesTillerSpec":
-					val = cloudSpecConfig.KubernetesSpecConfig.TillerImageBase + KubeImages[kubernetesVersion]["tiller"]
+					val = cloudSpecConfig.KubernetesSpecConfig.TillerImageBase + KubeConfigs[kubernetesRelease]["tiller"]
 				case "kubernetesKubeDNSSpec":
-					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeImages[kubernetesVersion]["dns"]
+					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeConfigs[kubernetesRelease]["dns"]
 				case "kubernetesPodInfraContainerSpec":
-					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeImages[kubernetesVersion]["pause"]
+					val = cloudSpecConfig.KubernetesSpecConfig.KubernetesImageBase + KubeConfigs[kubernetesRelease]["pause"]
 				case "kubernetesNodeStatusUpdateFrequency":
 					val = cs.Properties.OrchestratorProfile.KubernetesConfig.NodeStatusUpdateFrequency
 				case "kubernetesCtrlMgrNodeMonitorGracePeriod":
@@ -902,16 +1150,26 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 				case "cloudProviderRatelimitBucket":
 					val = strconv.Itoa(cs.Properties.OrchestratorProfile.KubernetesConfig.CloudProviderRateLimitBucket)
 				case "kubeBinariesSASURL":
-					val = cloudSpecConfig.KubernetesSpecConfig.KubeBinariesSASURLBase + KubeImages[kubernetesVersion]["windowszip"]
+					val = cloudSpecConfig.KubernetesSpecConfig.KubeBinariesSASURLBase + KubeConfigs[kubernetesRelease]["windowszip"]
 				case "kubeClusterCidr":
-					val = "10.244.0.0/16"
+					val = DefaultKubernetesClusterSubnet
+				case "kubeDNSServiceIP":
+					val = DefaultKubernetesDNSServiceIP
+				case "kubeServiceCidr":
+					val = DefaultKubernetesServiceCIDR
 				case "kubeBinariesVersion":
-					val = string(api.KubernetesDefaultVersion)
+					val = api.KubernetesReleaseToVersion[cs.Properties.OrchestratorProfile.OrchestratorRelease]
+				case "windowsTelemetryGUID":
+					val = cloudSpecConfig.KubernetesSpecConfig.WindowsTelemetryGUID
 				case "caPrivateKey":
 					// The base64 encoded "NotAvailable"
 					val = "Tm90QXZhaWxhYmxlCg=="
 				case "dockerBridgeCidr":
 					val = DefaultDockerBridgeSubnet
+				case "gchighthreshold":
+					val = strconv.Itoa(cs.Properties.OrchestratorProfile.KubernetesConfig.GCHighThreshold)
+				case "gclowthreshold":
+					val = strconv.Itoa(cs.Properties.OrchestratorProfile.KubernetesConfig.GCLowThreshold)
 				default:
 					val = ""
 				}
@@ -943,51 +1201,74 @@ func (t *TemplateGenerator) getTemplateFuncMap(cs *api.ContainerService) templat
 	}
 }
 
-func getPackageGUID(orchestratorType string, orchestratorVersion string, masterCount int) string {
-	if orchestratorType == api.DCOS && orchestratorVersion == api.DCOS190 {
-		switch masterCount {
-		case 1:
-			return "bcc883b7a3191412cf41824bdee06c1142187a0b"
-		case 3:
-			return "dcff7e24c0c1827bebeb7f1a806f558054481b33"
-		case 5:
-			return "b41bfa84137a6374b2ff5eb1655364d7302bd257"
+func makeMasterExtensionScriptCommands(cs *api.ContainerService) string {
+	copyIndex := "',copyIndex(),'"
+	if cs.Properties.OrchestratorProfile.IsKubernetes() {
+		copyIndex = "',copyIndex(variables('masterOffset')),'"
+	}
+	return makeExtensionScriptCommands(cs.Properties.MasterProfile.PreprovisionExtension,
+		cs.Properties.ExtensionProfiles, copyIndex)
+}
+
+func makeAgentExtensionScriptCommands(cs *api.ContainerService, profile *api.AgentPoolProfile) string {
+	copyIndex := "',copyIndex(),'"
+	if profile.IsAvailabilitySets() {
+		copyIndex = fmt.Sprintf("',copyIndex(variables('%sOffset')),'", profile.Name)
+	}
+	return makeExtensionScriptCommands(cs.Properties.MasterProfile.PreprovisionExtension,
+		cs.Properties.ExtensionProfiles, copyIndex)
+}
+
+func makeExtensionScriptCommands(extension *api.Extension, extensionProfiles []*api.ExtensionProfile, copyIndex string) string {
+	var extensionProfile *api.ExtensionProfile
+	for _, eP := range extensionProfiles {
+		if strings.EqualFold(eP.Name, extension.Name) {
+			extensionProfile = eP
+			break
 		}
-	} else if orchestratorType == api.DCOS && orchestratorVersion == api.DCOS188 {
-		switch masterCount {
-		case 1:
-			return "441385ce2f5942df7e29075c12fb38fa5e92cbba"
-		case 3:
-			return "b1cd359287504efb780257bd12cc3a63704e42d4"
-		case 5:
-			return "d9b61156dfcc9383e014851529738aa550ef57d9"
-		}
-	} else if orchestratorType == api.DCOS && orchestratorVersion == api.DCOS187 {
-		switch masterCount {
-		case 1:
-			return "556978041b6ed059cc0f474501083e35ea5645b8"
-		case 3:
-			return "1eb387eda0403c7fd6f1dacf66e530be74c3c3de"
-		case 5:
-			return "2e38627207dc70f46296b9649f9ee2a43500ec15"
-		}
-	} else if orchestratorType == api.DCOS && orchestratorVersion == api.DCOS184 {
-		switch masterCount {
-		case 1:
-			return "5ac6a7d060584c58c704e1f625627a591ecbde4e"
-		case 3:
-			return "42bd1d74e9a2b23836bd78919c716c20b98d5a0e"
-		case 5:
-			return "97947a91e2c024ed4f043bfcdad49da9418d3095"
-		}
-	} else if orchestratorType == api.DCOS && orchestratorVersion == api.DCOS173 {
-		switch masterCount {
-		case 1:
-			return "6b604c1331c2b8b52bb23d1ea8a8d17e0f2b7428"
-		case 3:
-			return "6af5097e7956962a3d4318d28fbf280a47305485"
-		case 5:
-			return "376e07e0dbad2af3da2c03bc92bb07e84b3dafd5"
+	}
+
+	if extensionProfile == nil {
+		panic(fmt.Sprintf("%s extension referenced was not found in the extension profile", extension.Name))
+	}
+
+	extensionsParameterReference := fmt.Sprintf("parameters('%sParameters')", extensionProfile.Name)
+	scriptURL := getExtensionURL(extensionProfile.RootURL, extensionProfile.Name, extensionProfile.Version, extensionProfile.Script, extensionProfile.URLQuery)
+	scriptFilePath := fmt.Sprintf("/opt/azure/containers/extensions/%s/%s", extensionProfile.Name, extensionProfile.Script)
+	return fmt.Sprintf("- sudo /usr/bin/curl -o %s --create-dirs \"%s\" \n- sudo /bin/chmod 744 %s \n- sudo %s ',%s,' > /var/log/%s-output.log",
+		scriptFilePath, scriptURL, scriptFilePath, scriptFilePath, extensionsParameterReference, extensionProfile.Name)
+}
+
+func getPackageGUID(orchestratorType string, orchestratorRelease string, masterCount int) string {
+	if orchestratorType == api.DCOS {
+		switch orchestratorRelease {
+		case api.DCOSRelease1Dot10:
+			switch masterCount {
+			case 1:
+				return "c4ec6210f396b8e435177b82e3280a2cef0ce721"
+			case 3:
+				return "08197947cb57d479eddb077a429fa15c139d7d20"
+			case 5:
+				return "f286ad9d3641da5abb622e4a8781f73ecd8492fa"
+			}
+		case api.DCOSRelease1Dot9:
+			switch masterCount {
+			case 1:
+				return "bcc883b7a3191412cf41824bdee06c1142187a0b"
+			case 3:
+				return "dcff7e24c0c1827bebeb7f1a806f558054481b33"
+			case 5:
+				return "b41bfa84137a6374b2ff5eb1655364d7302bd257"
+			}
+		case api.DCOSRelease1Dot8:
+			switch masterCount {
+			case 1:
+				return "441385ce2f5942df7e29075c12fb38fa5e92cbba"
+			case 3:
+				return "b1cd359287504efb780257bd12cc3a63704e42d4"
+			case 5:
+				return "d9b61156dfcc9383e014851529738aa550ef57d9"
+			}
 		}
 	}
 	return ""
@@ -1014,11 +1295,47 @@ func getDCOSMasterCustomNodeLabels() string {
 
 func getDCOSAgentCustomNodeLabels(profile *api.AgentPoolProfile) string {
 	var buf bytes.Buffer
+	var attrstring string
 	buf.WriteString("")
+	// always write MESOS_ATTRIBUTES because
+	// the provision script will add FD/UD attributes
+	// at node provisioning time
+	if len(profile.OSType) > 0 {
+		attrstring = fmt.Sprintf("MESOS_ATTRIBUTES=\"os:%s", profile.OSType)
+	} else {
+		attrstring = fmt.Sprintf("MESOS_ATTRIBUTES=\"os:linux")
+	}
+
+	if len(profile.Ports) > 0 {
+		attrstring += ";public_ip:yes"
+	}
+
+	buf.WriteString(attrstring)
 	if len(profile.CustomNodeLabels) > 0 {
-		buf.WriteString("MESOS_ATTRIBUTES=")
 		for k, v := range profile.CustomNodeLabels {
-			buf.WriteString(fmt.Sprintf("%s:%s;", k, v))
+			buf.WriteString(fmt.Sprintf(";%s:%s", k, v))
+		}
+	}
+	buf.WriteString("\"")
+	return buf.String()
+}
+
+func getDCOSWindowsAgentCustomAttributes(profile *api.AgentPoolProfile) string {
+	var buf bytes.Buffer
+	var attrstring string
+	buf.WriteString("")
+	if len(profile.OSType) > 0 {
+		attrstring = fmt.Sprintf("os:%s", profile.OSType)
+	} else {
+		attrstring = fmt.Sprintf("os:windows")
+	}
+	if len(profile.Ports) > 0 {
+		attrstring += ";public_ip:yes"
+	}
+	buf.WriteString(attrstring)
+	if len(profile.CustomNodeLabels) > 0 {
+		for k, v := range profile.CustomNodeLabels {
+			buf.WriteString(fmt.Sprintf(";%s:%s", k, v))
 		}
 	}
 	return buf.String()
@@ -1263,7 +1580,15 @@ func getBase64CustomScriptFromStr(str string) string {
 
 func getDCOSAgentProvisionScript(profile *api.AgentPoolProfile) string {
 	// add the provision script
-	bp, err1 := Asset(dcosProvision)
+
+	var scriptname string
+	if profile.OSType == api.Windows {
+		scriptname = dcosWindowsProvision
+	} else {
+		scriptname = dcosProvision
+	}
+
+	bp, err1 := Asset(scriptname)
 	if err1 != nil {
 		panic(fmt.Sprintf("BUG: %s", err1.Error()))
 	}
@@ -1308,21 +1633,18 @@ touch /etc/mesosphere/roles/azure_master`
 }
 
 // getSingleLineForTemplate returns the file as a single line for embedding in an arm template
-func getSingleLineDCOSCustomData(orchestratorType string, orchestratorVersion string, masterCount int, provisionContent string, attributeContents string) string {
+func getSingleLineDCOSCustomData(orchestratorType, orchestratorRelease string,
+	masterCount int, provisionContent, attributeContents, preProvisionExtensionContents string) string {
 	yamlFilename := ""
 	switch orchestratorType {
 	case api.DCOS:
-		switch orchestratorVersion {
-		case api.DCOS173:
-			yamlFilename = dcosCustomData173
-		case api.DCOS184:
-			yamlFilename = dcosCustomData184
-		case api.DCOS187:
-			yamlFilename = dcosCustomData187
-		case api.DCOS188:
+		switch orchestratorRelease {
+		case api.DCOSRelease1Dot8:
 			yamlFilename = dcosCustomData188
-		case api.DCOS190:
+		case api.DCOSRelease1Dot9:
 			yamlFilename = dcosCustomData190
+		case api.DCOSRelease1Dot10:
+			yamlFilename = dcosCustomData110
 		}
 	default:
 		// it is a bug to get here
@@ -1341,6 +1663,7 @@ func getSingleLineDCOSCustomData(orchestratorType string, orchestratorVersion st
 	yamlStr := string(b)
 	yamlStr = strings.Replace(yamlStr, "PROVISION_STR", provisionContent, -1)
 	yamlStr = strings.Replace(yamlStr, "ATTRIBUTES_STR", attributeContents, -1)
+	yamlStr = strings.Replace(yamlStr, "PREPROVISION_EXTENSION", preProvisionExtensionContents, -1)
 
 	// convert to json
 	jsonBytes, err4 := yaml.YAMLToJSON([]byte(yamlStr))
@@ -1363,7 +1686,7 @@ func getSingleLineDCOSCustomData(orchestratorType string, orchestratorVersion st
 	yamlStr = rVariable.ReplaceAllString(yamlStr, "',variables('$1'),'")
 
 	// replace the internal values
-	guid := getPackageGUID(orchestratorType, orchestratorVersion, masterCount)
+	guid := getPackageGUID(orchestratorType, orchestratorRelease, masterCount)
 	yamlStr = strings.Replace(yamlStr, "DCOSGUID", guid, -1)
 	publicIPStr := getDCOSCustomDataPublicIPStr(orchestratorType, masterCount)
 	yamlStr = strings.Replace(yamlStr, "DCOSCUSTOMDATAPUBLICIPSTR", publicIPStr, -1)
@@ -1430,4 +1753,198 @@ func getKubernetesPodStartIndex(properties *api.Properties) int {
 	}
 
 	return nodeCount + 1
+}
+
+// getLinkedTemplatesForExtensions returns the
+// Microsoft.Resources/deployments for each extension
+//func getLinkedTemplatesForExtensions(properties api.Properties) string {
+func getLinkedTemplatesForExtensions(properties *api.Properties) string {
+	var result string
+
+	extensions := properties.ExtensionProfiles
+	masterProfileExtensions := properties.MasterProfile.Extensions
+	orchestratorType := properties.OrchestratorProfile.OrchestratorType
+
+	for err, extensionProfile := range extensions {
+		_ = err
+
+		masterOptedForExtension, singleOrAll := validateProfileOptedForExtension(extensionProfile.Name, masterProfileExtensions)
+		if masterOptedForExtension {
+			result += ","
+			dta, e := getMasterLinkedTemplateText(properties.MasterProfile, orchestratorType, extensionProfile, singleOrAll)
+			if e != nil {
+				fmt.Printf(e.Error())
+				return ""
+			}
+			result += dta
+		}
+
+		for _, agentPoolProfile := range properties.AgentPoolProfiles {
+			poolProfileExtensions := agentPoolProfile.Extensions
+			poolOptedForExtension, singleOrAll := validateProfileOptedForExtension(extensionProfile.Name, poolProfileExtensions)
+			if poolOptedForExtension {
+				result += ","
+				dta, e := getAgentPoolLinkedTemplateText(agentPoolProfile, orchestratorType, extensionProfile, singleOrAll)
+				if e != nil {
+					fmt.Printf(e.Error())
+					return ""
+				}
+				result += dta
+			}
+
+		}
+	}
+
+	return result
+}
+
+func getMasterLinkedTemplateText(masterProfile *api.MasterProfile, orchestratorType string, extensionProfile *api.ExtensionProfile, singleOrAll string) (string, error) {
+	extTargetVMNamePrefix := "variables('masterVMNamePrefix')"
+
+	loopCount := "[variables('masterCount')]"
+	loopOffset := ""
+	if orchestratorType == api.Kubernetes {
+		// Due to upgrade k8s sometimes needs to install just some of the nodes.
+		loopCount = "[sub(variables('masterCount'), variables('masterOffset'))]"
+		loopOffset = "variables('masterOffset')"
+	}
+
+	if strings.EqualFold(singleOrAll, "single") {
+		loopCount = "1"
+	}
+	return internalGetPoolLinkedTemplateText(extTargetVMNamePrefix, orchestratorType, loopCount,
+		loopOffset, extensionProfile)
+}
+
+func getAgentPoolLinkedTemplateText(agentPoolProfile *api.AgentPoolProfile, orchestratorType string, extensionProfile *api.ExtensionProfile, singleOrAll string) (string, error) {
+	extTargetVMNamePrefix := fmt.Sprintf("variables('%sVMNamePrefix')", agentPoolProfile.Name)
+	loopCount := fmt.Sprintf("[variables('%sCount'))]", agentPoolProfile.Name)
+	loopOffset := ""
+
+	// Availability sets can have an offset since we don't redeploy vms.
+	// So we don't want to rerun these extensions in scale up scenarios.
+	if agentPoolProfile.IsAvailabilitySets() {
+		loopCount = fmt.Sprintf("[sub(variables('%sCount'), variables('%sOffset'))]",
+			agentPoolProfile.Name, agentPoolProfile.Name)
+		loopOffset = fmt.Sprintf("variables('%sOffset')", agentPoolProfile.Name)
+
+	}
+
+	if strings.EqualFold(singleOrAll, "single") {
+		loopCount = "1"
+	}
+
+	return internalGetPoolLinkedTemplateText(extTargetVMNamePrefix, orchestratorType, loopCount,
+		loopOffset, extensionProfile)
+}
+
+func internalGetPoolLinkedTemplateText(extTargetVMNamePrefix, orchestratorType, loopCount, loopOffset string, extensionProfile *api.ExtensionProfile) (string, error) {
+	dta, e := getLinkedTemplateTextForURL(extensionProfile.RootURL, orchestratorType, extensionProfile.Name, extensionProfile.Version, extensionProfile.URLQuery)
+	if e != nil {
+		return "", e
+	}
+	extensionsParameterReference := fmt.Sprintf("[parameters('%sParameters')]", extensionProfile.Name)
+	dta = strings.Replace(dta, "EXTENSION_PARAMETERS_REPLACE", extensionsParameterReference, -1)
+	dta = strings.Replace(dta, "EXTENSION_URL_REPLACE", extensionProfile.RootURL, -1)
+	dta = strings.Replace(dta, "EXTENSION_TARGET_VM_NAME_PREFIX", extTargetVMNamePrefix, -1)
+	if _, err := strconv.Atoi(loopCount); err == nil {
+		dta = strings.Replace(dta, "\"EXTENSION_LOOP_COUNT\"", loopCount, -1)
+	} else {
+		dta = strings.Replace(dta, "EXTENSION_LOOP_COUNT", loopCount, -1)
+	}
+
+	dta = strings.Replace(dta, "EXTENSION_LOOP_OFFSET", loopOffset, -1)
+	return dta, nil
+}
+
+func validateProfileOptedForExtension(extensionName string, profileExtensions []api.Extension) (bool, string) {
+	for _, extension := range profileExtensions {
+		if extensionName == extension.Name {
+			return true, extension.SingleOrAll
+		}
+	}
+	return false, ""
+}
+
+// getLinkedTemplateTextForURL returns the string data from
+// template-link.json in the following directory:
+// extensionsRootURL/extensions/extensionName/version
+// It returns an error if the extension cannot be found
+// or loaded.  getLinkedTemplateTextForURL provides the ability
+// to pass a root extensions url for testing
+func getLinkedTemplateTextForURL(rootURL, orchestrator, extensionName, version, query string) (string, error) {
+	supportsExtension, err := orchestratorSupportsExtension(rootURL, orchestrator, extensionName, version, query)
+	if supportsExtension == false {
+		return "", fmt.Errorf("Extension not supported for orchestrator. Error: %s", err)
+	}
+
+	templateLinkBytes, err := getExtensionResource(rootURL, extensionName, version, "template-link.json", query)
+	if err != nil {
+		return "", err
+	}
+
+	return string(templateLinkBytes), nil
+}
+
+func orchestratorSupportsExtension(rootURL, orchestrator, extensionName, version, query string) (bool, error) {
+	orchestratorBytes, err := getExtensionResource(rootURL, extensionName, version, "supported-orchestrators.json", query)
+	if err != nil {
+		return false, err
+	}
+
+	var supportedOrchestrators []string
+	err = json.Unmarshal(orchestratorBytes, &supportedOrchestrators)
+	if err != nil {
+		return false, fmt.Errorf("Unable to parse supported-orchestrators.json for Extension %s Version %s", extensionName, version)
+	}
+
+	if stringInSlice(orchestrator, supportedOrchestrators) != true {
+		return false, fmt.Errorf("Orchestrator: %s not in list of supported orchestrators for Extension: %s Version %s", orchestrator, extensionName, version)
+	}
+
+	return true, nil
+}
+
+func getExtensionResource(rootURL, extensionName, version, fileName, query string) ([]byte, error) {
+	requestURL := getExtensionURL(rootURL, extensionName, version, fileName, query)
+
+	res, err := http.Get(requestURL)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to GET extension resource for extension: %s with version %s with filename %s at URL: %s Error: %s", extensionName, version, fileName, requestURL, err)
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		return nil, fmt.Errorf("Unable to GET extension resource for extension: %s with version %s with filename %s at URL: %s StatusCode: %s: Status: %s", extensionName, version, fileName, requestURL, strconv.Itoa(res.StatusCode), res.Status)
+	}
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to GET extension resource for extension: %s with version %s  with filename %s at URL: %s Error: %s", extensionName, version, fileName, requestURL, err)
+	}
+
+	return body, nil
+}
+
+func getExtensionURL(rootURL, extensionName, version, fileName, query string) string {
+	extensionsDir := "extensions"
+	url := rootURL + extensionsDir + "/" + extensionName + "/" + version + "/" + fileName
+	if query != "" {
+		url += "?" + query
+	}
+	return url
+}
+
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
+}
+
+func getSwarmVersions(orchestratorVersion, dockerComposeVersion string) string {
+	return fmt.Sprintf("\"orchestratorVersion\": \"%s\",\n\"dockerComposeVersion\": \"%s\",\n", orchestratorVersion, dockerComposeVersion)
 }

@@ -2,6 +2,9 @@
     "targetEnvironment": "[parameters('targetEnvironment')]",
     "maxVMsPerPool": 100,
     "apiVersionDefault": "2016-03-30",
+    "apiVersionLinkDefault": "2015-01-01",
+    "singleQuote": "'",
+    "doubleSingleQuote": "''",
 {{if .LinuxProfile.HasSecrets}}
     "linuxProfileSecrets" :
       [
@@ -23,8 +26,22 @@
         {{end}}
       ],
 {{end}}
-    "masterAvailabilitySet": "[concat(variables('orchestratorName'), '-master-availabilitySet-', variables('nameSuffix'))]",
-    "masterCount": {{.MasterProfile.Count}},
+{{if .HasWindows}}
+    "windowsAdminUsername": "[parameters('windowsAdminUsername')]",
+    "windowsAdminPassword": "[parameters('windowsAdminPassword')]",
+    "agentWindowsBackendPort": 3389,
+    "agentWindowsPublisher": "MicrosoftWindowsServer",
+    "agentWindowsOffer": "WindowsServer",
+    "agentWindowsSku": "2016-Datacenter-with-Containers",
+    "agentWindowsVersion": "[parameters('agentWindowsVersion')]",
+    "dcosWindowsBootstrapURL" : "[parameters('dcosWindowsBootstrapURL')]",
+    "windowsCustomScriptSuffix": " $inputFile = '%SYSTEMDRIVE%\\AzureData\\CustomData.bin' ; $outputFile = '%SYSTEMDRIVE%\\AzureData\\dcosWindowsProvision.ps1' ; $inputStream = New-Object System.IO.FileStream $inputFile, ([IO.FileMode]::Open), ([IO.FileAccess]::Read), ([IO.FileShare]::Read) ; $sr = New-Object System.IO.StreamReader(New-Object System.IO.Compression.GZipStream($inputStream, [System.IO.Compression.CompressionMode]::Decompress)) ; $sr.ReadToEnd() | Out-File($outputFile) ; Invoke-Expression('{0} {1}' -f $outputFile, $arguments) ; ",
+    "windowsMasterCustomScriptArguments": "[concat('$arguments = ', variables('singleQuote'),'-MasterCount ', variables('masterCount'), ' -firstMasterIP ', parameters('firstConsecutiveStaticIP'), variables('singleQuote'), ' ; ')]",
+
+    "windowsMasterCustomScript": "[concat('powershell.exe -ExecutionPolicy Unrestricted -command \"', variables('windowsMasterCustomScriptArguments'), variables('windowsCustomScriptSuffix'), '\" > %SYSTEMDRIVE%\\AzureData\\dcosWindowsProvision.log 2>&1')]",
+{{end}}
+    "masterAvailabilitySet": "[concat(variables('orchestratorName'), '-master-availabilitySet-', variables('nameSuffix'))]", 
+    "masterCount": {{.MasterProfile.Count}}, 
     "masterEndpointDNSNamePrefix": "[tolower(parameters('masterEndpointDNSNamePrefix'))]",
     "masterHttpSourceAddressPrefix": "{{.MasterProfile.HTTPSourceAddressPrefix}}",
     "masterLbBackendPoolName": "[concat(variables('orchestratorName'), '-master-pool-', variables('nameSuffix'))]",
@@ -36,8 +53,9 @@
     "masterNSGName": "[concat(variables('orchestratorName'), '-master-nsg-', variables('nameSuffix'))]",
     "masterPublicIPAddressName": "[concat(variables('orchestratorName'), '-master-ip-', variables('masterEndpointDNSNamePrefix'), '-', variables('nameSuffix'))]",
     "apiVersionStorage": "2015-06-15",
-    "storageAccountBaseName": "[uniqueString(concat(variables('masterEndpointDNSNamePrefix'),variables('location'),variables('orchestratorName')))]",
-    "masterStorageAccountExhibitorName": "[concat(variables('storageAccountBaseName'), 'exhb0')]",
+
+    "storageAccountBaseName": "[uniqueString(concat(variables('masterEndpointDNSNamePrefix'),variables('location'),variables('orchestratorName')))]", 
+    "masterStorageAccountExhibitorName": "[concat(variables('storageAccountBaseName'), 'exhb0')]", 
     "storageAccountType": "Standard_LRS",
 {{if .HasStorageAccountDisks}}
     "maxVMsPerStorageAccount": 20,
@@ -81,10 +99,10 @@
     "nameSuffix": "[parameters('nameSuffix')]",
     "oauthEnabled": "{{.MasterProfile.OAuthEnabled}}",
     "orchestratorName": "dcos",
-    "osImageOffer": "UbuntuServer",
-    "osImagePublisher": "Canonical",
-    "osImageSKU": "16.04-LTS",
-    "osImageVersion": "16.04.201706191",
+    "osImageOffer": "[parameters('osImageOffer')]", 
+    "osImagePublisher": "[parameters('osImagePublisher')]", 
+    "osImageSKU": "[parameters('osImageSKU')]", 
+    "osImageVersion": "[parameters('osImageVersion')]",
     "sshKeyPath": "[concat('/home/', variables('adminUsername'), '/.ssh/authorized_keys')]",
     "sshRSAPublicKey": "[parameters('sshRSAPublicKey')]",
     "locations": [
@@ -92,7 +110,7 @@
          "[parameters('location')]"
     ],
     "location": "[variables('locations')[mod(add(2,length(parameters('location'))),add(1,length(parameters('location'))))]]",
-{{if IsDCOS190}}
+{{if IsDCOS19}}
     "masterSshInboundNatRuleIdPrefix": "[concat(variables('masterLbID'),'/inboundNatRules/SSH-',variables('masterVMNamePrefix'))]",
     "masterSshPort22InboundNatRuleIdPrefix": "[concat(variables('masterLbID'),'/inboundNatRules/SSHPort22-',variables('masterVMNamePrefix'))]",
     "masterLbInboundNatRules": [
