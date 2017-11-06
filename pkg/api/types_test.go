@@ -28,15 +28,13 @@ const exampleAPIModel = `{
 
 func TestIsDCOS(t *testing.T) {
 	dCOSProfile := &OrchestratorProfile{
-		OrchestratorType:    "DCOS",
-		OrchestratorRelease: "vlabs",
+		OrchestratorType: "DCOS",
 	}
 	if !dCOSProfile.IsDCOS() {
 		t.Fatalf("unable to detect DCOS orchestrator profile from OrchestratorType=%s", dCOSProfile.OrchestratorType)
 	}
 	kubernetesProfile := &OrchestratorProfile{
-		OrchestratorType:    "Kubernetes",
-		OrchestratorRelease: "vlabs",
+		OrchestratorType: "Kubernetes",
 	}
 	if kubernetesProfile.IsDCOS() {
 		t.Fatalf("unexpectedly detected DCOS orchestrator profile from OrchestratorType=%s", kubernetesProfile.OrchestratorType)
@@ -48,7 +46,7 @@ func TestCustomHyperkubeImageField(t *testing.T) {
 	apiloader := &Apiloader{
 		Translator: nil,
 	}
-	apimodel, _, err := apiloader.DeserializeContainerService([]byte(exampleAPIModel), false, nil)
+	apimodel, _, err := apiloader.DeserializeContainerService([]byte(exampleAPIModel), false, false, nil)
 	if err != nil {
 		t.Fatalf("unexpectedly error deserializing the example apimodel: %s", err)
 	}

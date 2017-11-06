@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/json"
+
 	"github.com/Azure/acs-engine/pkg/api/agentPoolOnlyApi/v20170831"
 	"github.com/Azure/acs-engine/pkg/api/agentPoolOnlyApi/vlabs"
+	"github.com/Azure/acs-engine/pkg/api/common"
 )
 
 ///////////////////////////////////////////////////////////
@@ -50,7 +53,7 @@ func convertV20170831AgentPoolOnlyProperties(obj *v20170831.Properties) *Propert
 	properties.HostedMasterProfile.DNSPrefix = obj.DNSPrefix
 	properties.HostedMasterProfile.FQDN = obj.FQDN
 
-	properties.OrchestratorProfile = convertV20170831AgentPoolOnlyOrchestratorProfile(obj.KubernetesRelease)
+	properties.OrchestratorProfile = convertV20170831AgentPoolOnlyOrchestratorProfile(obj.KubernetesVersion)
 
 	properties.AgentPoolProfiles = make([]*AgentPoolProfile, len(obj.AgentPoolProfiles))
 	for i := range obj.AgentPoolProfiles {
@@ -100,7 +103,7 @@ func convertVLabsAgentPoolOnlyResourcePurchasePlan(vlabs *vlabs.ResourcePurchase
 
 func convertVLabsAgentPoolOnlyProperties(vlabs *vlabs.Properties, api *Properties) {
 	api.ProvisioningState = ProvisioningState(vlabs.ProvisioningState)
-	api.OrchestratorProfile = convertVLabsAgentPoolOnlyOrchestratorProfile(vlabs.KubernetesRelease)
+	api.OrchestratorProfile = convertVLabsAgentPoolOnlyOrchestratorProfile(vlabs.KubernetesVersion)
 	api.MasterProfile = nil
 
 	api.HostedMasterProfile = &HostedMasterProfile{}
@@ -183,36 +186,18 @@ func convertVLabsAgentPoolOnlyWindowsProfile(vlabs *vlabs.WindowsProfile, api *W
 	// }
 }
 
-func convertV20170831AgentPoolOnlyOrchestratorProfile(kubernetesRelease string) *OrchestratorProfile {
-	orchestratorProfile := &OrchestratorProfile{
-		OrchestratorType: Kubernetes,
+func convertV20170831AgentPoolOnlyOrchestratorProfile(kubernetesVersion string) *OrchestratorProfile {
+	return &OrchestratorProfile{
+		OrchestratorType:    Kubernetes,
+		OrchestratorVersion: common.GetSupportedKubernetesVersion(kubernetesVersion),
 	}
-
-	switch kubernetesRelease {
-	case KubernetesRelease1Dot7, KubernetesRelease1Dot6, KubernetesRelease1Dot5:
-		orchestratorProfile.OrchestratorRelease = kubernetesRelease
-	default:
-		orchestratorProfile.OrchestratorRelease = KubernetesDefaultRelease
-	}
-	orchestratorProfile.OrchestratorVersion = KubernetesReleaseToVersion[orchestratorProfile.OrchestratorRelease]
-
-	return orchestratorProfile
 }
 
-func convertVLabsAgentPoolOnlyOrchestratorProfile(kubernetesRelease string) *OrchestratorProfile {
-	orchestratorProfile := &OrchestratorProfile{
-		OrchestratorType: Kubernetes,
+func convertVLabsAgentPoolOnlyOrchestratorProfile(kubernetesVersion string) *OrchestratorProfile {
+	return &OrchestratorProfile{
+		OrchestratorType:    Kubernetes,
+		OrchestratorVersion: common.GetSupportedKubernetesVersion(kubernetesVersion),
 	}
-
-	switch kubernetesRelease {
-	case KubernetesRelease1Dot7, KubernetesRelease1Dot6, KubernetesRelease1Dot5:
-		orchestratorProfile.OrchestratorRelease = kubernetesRelease
-	default:
-		orchestratorProfile.OrchestratorRelease = KubernetesDefaultRelease
-	}
-	orchestratorProfile.OrchestratorVersion = KubernetesReleaseToVersion[orchestratorProfile.OrchestratorRelease]
-
-	return orchestratorProfile
 }
 
 func convertV20170831AgentPoolOnlyAgentPoolProfile(v20170831 *v20170831.AgentPoolProfile, availabilityProfile string) *AgentPoolProfile {
@@ -263,4 +248,24 @@ func convertVLabsAgentPoolOnlyCertificateProfile(vlabs *vlabs.CertificateProfile
 	api.ClientPrivateKey = vlabs.ClientPrivateKey
 	api.KubeConfigCertificate = vlabs.KubeConfigCertificate
 	api.KubeConfigPrivateKey = vlabs.KubeConfigPrivateKey
+}
+
+func isAgentPoolOnlyClusterJSON(contents []byte) bool {
+	properties, propertiesPresent := propertiesAsMap(contents)
+	if !propertiesPresent {
+		return false
+	}
+	_, masterProfilePresent := properties["masterProfile"]
+	return !masterProfilePresent
+}
+
+func propertiesAsMap(contents []byte) (map[string]interface{}, bool) {
+	var raw interface{}
+	json.Unmarshal(contents, &raw)
+	jsonMap := raw.(map[string]interface{})
+	properties, propertiesPresent := jsonMap["properties"]
+	if !propertiesPresent {
+		return nil, false
+	}
+	return properties.(map[string]interface{}), true
 }

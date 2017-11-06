@@ -13,7 +13,7 @@ import (
 
 const (
 	//ServerVersion is used to parse out the version of the API running
-	ServerVersion = `(Server Version:\s)+(v\d.\d.\d)+`
+	ServerVersion = `(Server Version:\s)+(v\d+.\d+.\d+)+`
 )
 
 // Node represents the kubernetes Node Resource
@@ -150,4 +150,24 @@ func (ns *Status) GetAddressByType(t string) *Address {
 		}
 	}
 	return nil
+}
+
+// GetByPrefix will return a []Node of all nodes that have a name that match the prefix
+func GetByPrefix(prefix string) ([]Node, error) {
+	list, err := Get()
+	if err != nil {
+		return nil, err
+	}
+
+	nodes := make([]Node, 0)
+	for _, n := range list.Nodes {
+		exp, err := regexp.Compile(prefix)
+		if err != nil {
+			return nil, err
+		}
+		if exp.MatchString(n.Metadata.Name) {
+			nodes = append(nodes, n)
+		}
+	}
+	return nodes, nil
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Masterminds/semver"
+
 	validator "gopkg.in/go-playground/validator.v9"
 )
 
@@ -19,8 +21,6 @@ func HandleValidationErrors(e validator.ValidationErrors) error {
 		"Properties.WindowsProfile.AdminUsername",
 		"Properties.WindowsProfile.AdminPassword":
 		return fmt.Errorf("missing %s", ns)
-	case "Properties.OrchestratorProfile.OrchestratorVersion":
-		return fmt.Errorf("OrchestratorVersion is a readyonly field, leave it empty")
 	case "Properties.MasterProfile.Count":
 		return fmt.Errorf("MasterProfile count needs to be 1, 3, or 5")
 	case "Properties.MasterProfile.OSDiskSizeGB":
@@ -52,4 +52,94 @@ func HandleValidationErrors(e validator.ValidationErrors) error {
 		}
 	}
 	return fmt.Errorf("Namespace %s is not caught, %+v", ns, e)
+}
+
+// GetSupportedVersions get supported version list for a certain orchestrator
+func GetSupportedVersions(orchType string) (versions []string, defaultVersion string) {
+	switch orchType {
+	case Kubernetes:
+		return GetAllSupportedKubernetesVersions(), string(KubernetesDefaultVersion)
+	case DCOS:
+		return AllDCOSSupportedVersions, DCOSDefaultVersion
+	default:
+		return nil, ""
+	}
+}
+
+//GetValidPatchVersion gets the current valid patch version for the minor version of the passed in version
+func GetValidPatchVersion(orchType, orchVer string) string {
+	if orchVer == "" {
+		return RationalizeReleaseAndVersion(
+			orchType,
+			"",
+			"")
+	}
+
+	// check if the current version is valid, this allows us to have multiple supported patch versions in the future if we need it
+	version := RationalizeReleaseAndVersion(
+		orchType,
+		"",
+		orchVer)
+
+	if version == "" {
+		sv, _ := semver.NewVersion(orchVer)
+		sr := fmt.Sprintf("%d.%d", sv.Major(), sv.Minor())
+
+		version = RationalizeReleaseAndVersion(
+			orchType,
+			sr,
+			"")
+	}
+	return version
+}
+
+// RationalizeReleaseAndVersion return a version when it can be rationalized from the input, otherwise ""
+func RationalizeReleaseAndVersion(orchType, orchRel, orchVer string) (version string) {
+	supportedVersions, defaultVersion := GetSupportedVersions(orchType)
+	if supportedVersions == nil {
+		return ""
+	}
+
+	if orchRel == "" && orchVer == "" {
+		return defaultVersion
+	} else if orchVer == "" {
+		// Try to get latest version matching the release
+		version = ""
+		for _, ver := range supportedVersions {
+			sv, _ := semver.NewVersion(ver)
+			sr := fmt.Sprintf("%d.%d", sv.Major(), sv.Minor())
+			if sr == orchRel {
+				if version == "" {
+					version = ver
+				} else {
+					cons, _ := semver.NewConstraint(">" + version)
+					if cons.Check(sv) {
+						version = ver
+					}
+				}
+			}
+		}
+		return version
+	} else if orchRel == "" {
+		// Try to get version the same with orchVer
+		version = ""
+		for _, ver := range supportedVersions {
+			if ver == orchVer {
+				version = ver
+				break
+			}
+		}
+		return version
+	}
+	// Try to get latest version matching the release
+	version = ""
+	for _, ver := range supportedVersions {
+		sv, _ := semver.NewVersion(ver)
+		sr := fmt.Sprintf("%d.%d", sv.Major(), sv.Minor())
+		if sr == orchRel && ver == orchVer {
+			version = ver
+			break
+		}
+	}
+	return version
 }

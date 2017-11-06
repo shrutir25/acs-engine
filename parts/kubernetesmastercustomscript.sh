@@ -4,49 +4,23 @@
 # START SECRET DATA - ECHO DISABLED
 ###########################################################
 
+# Following parameters now read from environment variable
 # Fields for `azure.json`
-TENANT_ID="${1}"
-SUBSCRIPTION_ID="${2}"
-RESOURCE_GROUP="${3}"
-LOCATION="${4}"
-SUBNET="${5}"
-NETWORK_SECURITY_GROUP="${6}"
-VIRTUAL_NETWORK="${7}"
-ROUTE_TABLE="${8}"
-PRIMARY_AVAILABILITY_SET="${9}"
-SERVICE_PRINCIPAL_CLIENT_ID="${10}"
-SERVICE_PRINCIPAL_CLIENT_SECRET="${11}"
-KUBELET_PRIVATE_KEY="${12}"
-TARGET_ENVIRONMENT="${13}"
-NETWORK_POLICY="${14}"
-FQDNSuffix="${15}"
-VNET_CNI_PLUGINS_URL="${16}"
-CNI_PLUGINS_URL="${17}"
-CALICO_CONFIG_URL="${18}"
-MAX_PODS="${19}"
+# TENANT_ID SUBSCRIPTION_ID RESOURCE_GROUP LOCATION SUBNET
+# NETWORK_SECURITY_GROUP VIRTUAL_NETWORK VIRTUAL_NETWORK_RESOURCE_GROUP ROUTE_TABLE PRIMARY_AVAILABILITY_SET
+# SERVICE_PRINCIPAL_CLIENT_ID SERVICE_PRINCIPAL_CLIENT_SECRET KUBELET_PRIVATE_KEY TARGET_ENVIRONMENT NETWORK_POLICY
+# FQDNSuffix VNET_CNI_PLUGINS_URL CNI_PLUGINS_URL MAX_PODS
 
 # Default values for backoff configuration
-CLOUDPROVIDER_BACKOFF="${20}"
-CLOUDPROVIDER_BACKOFF_RETRIES="${21}"
-CLOUDPROVIDER_BACKOFF_EXPONENT="${22}"
-CLOUDPROVIDER_BACKOFF_DURATION="${23}"
-CLOUDPROVIDER_BACKOFF_JITTER="${24}"
+# CLOUDPROVIDER_BACKOFF CLOUDPROVIDER_BACKOFF_RETRIES CLOUDPROVIDER_BACKOFF_EXPONENT CLOUDPROVIDER_BACKOFF_DURATION CLOUDPROVIDER_BACKOFF_JITTER
 # Default values for rate limit configuration
-CLOUDPROVIDER_RATELIMIT="${25}"
-CLOUDPROVIDER_RATELIMIT_QPS="${26}"
-CLOUDPROVIDER_RATELIMIT_BUCKET="${27}"
+# CLOUDPROVIDER_RATELIMIT CLOUDPROVIDER_RATELIMIT_QPS CLOUDPROVIDER_RATELIMIT_BUCKET
 
-USE_MANAGED_IDENTITY_EXTENSION="${28}"
-USE_INSTANCE_METADATA="${29}"
+# USE_MANAGED_IDENTITY_EXTENSION USE_INSTANCE_METADATA
 
 # Master only secrets
-APISERVER_PRIVATE_KEY="${30}"
-CA_CERTIFICATE="${31}"
-CA_PRIVATE_KEY="${32}"
-MASTER_FQDN="${33}"
-KUBECONFIG_CERTIFICATE="${34}"
-KUBECONFIG_KEY="${35}"
-ADMINUSER="${36}"
+# APISERVER_PRIVATE_KEY CA_CERTIFICATE CA_PRIVATE_KEY MASTER_FQDN KUBECONFIG_CERTIFICATE
+# KUBECONFIG_KEY ADMINUSER
 
 # cloudinit runcmd and the extension will run in parallel, this is to ensure
 # runcmd finishes
@@ -61,10 +35,8 @@ ensureRunCommandCompleted()
         sleep 1
     done
 }
-ensureRunCommandCompleted
 
-# make sure walinuxagent doesn't get updated in the middle of running this script
-apt-mark hold walinuxagent
+echo `date`,`hostname`, startscript>>/opt/m 
 
 # A delay to start the kubernetes processes is necessary
 # if a reboot is required.  Otherwise, the agents will encounter issue: 
@@ -123,6 +95,7 @@ cat << EOF > "${AZURE_JSON_PATH}"
     "subnetName": "${SUBNET}",
     "securityGroupName": "${NETWORK_SECURITY_GROUP}",
     "vnetName": "${VIRTUAL_NETWORK}",
+    "vnetResourceGroup": "${VIRTUAL_NETWORK_RESOURCE_GROUP}",
     "routeTableName": "${ROUTE_TABLE}",
     "primaryAvailabilitySetName": "${PRIMARY_AVAILABILITY_SET}",
     "cloudProviderBackoff": ${CLOUDPROVIDER_BACKOFF},
@@ -412,12 +385,25 @@ users:
 }
 
 # master and node
+echo `date`,`hostname`, EnsureDockerStart>>/opt/m 
 ensureDocker
+echo `date`,`hostname`, configNetworkPolicyStart>>/opt/m 
 configNetworkPolicy
+echo `date`,`hostname`, setMaxPodsStart>>/opt/m 
 setMaxPods ${MAX_PODS}
+echo `date`,`hostname`, ensureKubeletStart>>/opt/m
 ensureKubelet
+echo `date`,`hostname`, extractKubctlStart>>/opt/m 
 extractKubectl
+echo `date`,`hostname`, ensureJournalStart>>/opt/m 
 ensureJournal
+echo `date`,`hostname`, ensureJournalDone>>/opt/m 
+
+ensureRunCommandCompleted
+echo `date`,`hostname`, RunCmdCompleted>>/opt/m 
+
+# make sure walinuxagent doesn't get updated in the middle of running this script
+apt-mark hold walinuxagent
 
 # master only
 if [[ ! -z "${APISERVER_PRIVATE_KEY}" ]]; then
@@ -441,3 +427,5 @@ if $REBOOTREQUIRED; then
   echo 'reboot required, rebooting node in 1 minute'
   /bin/bash -c "shutdown -r 1 &"
 fi
+
+echo `date`,`hostname`, endscript>>/opt/m 
